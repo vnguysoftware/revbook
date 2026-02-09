@@ -1,0 +1,47 @@
+{
+  "name": "rev-back",
+  "version": "0.1.0",
+  "description": "Entitlement correctness engine — detect payment and subscription issues across billing systems",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate": "tsx src/config/migrate.ts",
+    "migrate:generate": "drizzle-kit generate",
+    "seed": "tsx scripts/seed.ts",
+    "lint": "eslint src/",
+    "dev:all": "./scripts/dev.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0",
+    "@hono/node-server": "^1.13.0",
+    "bullmq": "^5.0.0",
+    "dayjs": "^1.11.0",
+    "dotenv": "^16.0.0",
+    "drizzle-orm": "^0.36.0",
+    "hono": "^4.6.0",
+    "ioredis": "^5.4.0",
+    "jose": "^5.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "nanoid": "^5.0.0",
+    "nodemailer": "^8.0.1",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "postgres": "^3.4.0",
+    "stripe": "^17.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^7.0.9",
+    "drizzle-kit": "^0.28.0",
+    "eslint": "^9.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  }
+}
