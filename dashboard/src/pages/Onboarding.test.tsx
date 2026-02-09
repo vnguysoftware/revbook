@@ -53,8 +53,8 @@ describe('OnboardingPage', () => {
   describe('initial render', () => {
     it('renders hero copy', () => {
       renderOnboarding();
-      expect(screen.getByText('Find your first billing issue')).toBeInTheDocument();
-      expect(screen.getByText('Your first insight is just a connection away.')).toBeInTheDocument();
+      expect(screen.getByText('Defend every dollar')).toBeInTheDocument();
+      expect(screen.getByText(/Connect your billing systems/)).toBeInTheDocument();
     });
 
     it('renders Section 1 (Get Started) by default', () => {
@@ -516,19 +516,19 @@ describe('OnboardingPage', () => {
             topIssues: [
               {
                 id: 'iss_1',
-                type: 'paid_no_access',
+                type: 'payment_without_entitlement',
                 severity: 'critical',
-                title: 'Paid but no access',
-                description: 'User is paying but may not have product access',
+                title: 'Payment succeeded but entitlement is inactive',
+                description: 'Payment succeeded but entitlement state did not transition to active',
                 estimatedRevenueCents: 120000,
                 confidence: 0.92,
               },
               {
                 id: 'iss_2',
-                type: 'refund_still_active',
+                type: 'refund_not_revoked',
                 severity: 'warning',
-                title: 'Refund still active',
-                description: 'Refunded subscription still has access',
+                title: 'Refund recorded but entitlement not revoked',
+                description: 'Refund was recorded but entitlement was not revoked',
                 estimatedRevenueCents: 89000,
                 confidence: 0.87,
               },
@@ -554,8 +554,8 @@ describe('OnboardingPage', () => {
       expect(screen.getByText('4')).toBeInTheDocument(); // info count
 
       // Top issues
-      expect(screen.getByText('Paid but no access')).toBeInTheDocument();
-      expect(screen.getByText('Refund still active')).toBeInTheDocument();
+      expect(screen.getByText('Payment succeeded but entitlement is inactive')).toBeInTheDocument();
+      expect(screen.getByText('Refund recorded but entitlement not revoked')).toBeInTheDocument();
 
       // CTA
       expect(screen.getByText('Explore Full Dashboard')).toBeInTheDocument();
@@ -631,9 +631,9 @@ describe('OnboardingPage', () => {
             topIssues: [
               {
                 id: 'iss_abc',
-                type: 'paid_no_access',
+                type: 'payment_without_entitlement',
                 severity: 'critical',
-                title: 'Paid but no access',
+                title: 'Payment succeeded but entitlement is inactive',
                 description: 'test',
                 estimatedRevenueCents: 50000,
                 confidence: 0.9,
@@ -647,10 +647,10 @@ describe('OnboardingPage', () => {
       renderOnboarding();
 
       await waitFor(() => {
-        expect(screen.getByText('Paid but no access')).toBeInTheDocument();
+        expect(screen.getByText('Payment succeeded but entitlement is inactive')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Paid but no access'));
+      await user.click(screen.getByText('Payment succeeded but entitlement is inactive'));
       expect(mockNavigate).toHaveBeenCalledWith('/issues/iss_abc');
     });
 

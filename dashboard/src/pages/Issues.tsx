@@ -1,8 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import useSWR, { mutate as globalMutate } from 'swr';
+import useSWR from 'swr';
 import { fetcher, apiFetch } from '../lib/api';
 import { formatCents, timeAgo, severityDot } from '../lib/format';
+import {
+  ISSUE_TYPE_LABELS,
+  ISSUE_TYPE_FILTER_OPTIONS,
+  CATEGORY_FILTER_OPTIONS,
+  DETECTOR_CATEGORIES,
+  DETECTOR_META,
+  getIssueCategory,
+  isAggregateIssue,
+  type DetectorCategoryKey,
+} from '../lib/constants';
 import { Badge } from '../components/ui/Badge';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -14,13 +24,18 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
-  Search,
   Filter,
   CheckSquare,
   Square,
   Eye,
   XCircle,
   Loader2,
+  BarChart3,
+  ArrowRight,
+  Wifi,
+  GitCompare,
+  ShieldAlert,
+  BadgeCheck,
 } from 'lucide-react';
 
 interface Issue {
@@ -33,6 +48,7 @@ interface Issue {
   estimatedRevenueCents: number | null;
   confidence: number | null;
   userId: string | null;
+  detectionTier: string | null;
   evidence: Record<string, unknown>;
   createdAt: string;
 }
@@ -41,17 +57,6 @@ interface IssuesResponse {
   issues: Issue[];
   pagination: { limit: number; offset: number; count: number };
 }
-
-const ISSUE_TYPE_LABELS: Record<string, string> = {
-  paid_no_access: 'Paid but No Access',
-  access_no_payment: 'Access without Payment',
-  cross_platform_mismatch: 'Cross-Platform Mismatch',
-  duplicate_subscription: 'Duplicate Subscription',
-  refund_still_active: 'Refund Still Active',
-  silent_renewal_failure: 'Silent Renewal Failure',
-  trial_no_conversion: 'Trial Not Converted',
-  webhook_delivery_gap: 'Webhook Gap',
-};
 
 const STATUS_TABS = [
   { value: 'open', label: 'Open', icon: AlertTriangle },
@@ -66,6 +71,13 @@ const SORT_OPTIONS = [
   { value: 'severity', label: 'Severity' },
 ];
 
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Wifi,
+  GitCompare,
+  ShieldAlert,
+  BadgeCheck,
+};
+
 const PAGE_SIZE = 20;
 
 export function IssuesPage() {
@@ -73,6 +85,7 @@ export function IssuesPage() {
 
   const [status, setStatus] = useState('open');
   const [severity, setSeverity] = useState<string>('');
+  const [category, setCategory] = useState<string>('');
   const [issueType, setIssueType] = useState<string>('');
   const [sortBy, setSortBy] = useState('newest');
   const [page, setPage] = useState(0);
@@ -98,17 +111,60 @@ export function IssuesPage() {
   useEffect(() => {
     setPage(0);
     setSelectedIds(new Set());
-  }, [status, severity, issueType]);
+  }, [status, severity, category, issueType]);
+
+  // When category changes, reset issueType if it doesn't belong to selected category
+  useEffect(() => {
+    if (category && issueType) {
+      const cat = DETECTOR_CATEGORIES[category as DetectorCategoryKey];
+      if (cat && !(cat.detectors as readonly string[]).includes(issueType)) {
+        setIssueType('');
+      }
+    }
+  }, [category, issueType]);
+
+  // Compute filtered type options based on selected category
+  const filteredTypeOptions: Record<string, string> = category
+    ? Object.fromEntries(
+        Object.entries(ISSUE_TYPE_FILTER_OPTIONS).filter(([key]) => {
+          const cat = DETECTOR_CATEGORIES[category as DetectorCategoryKey];
+          return (cat?.detectors as readonly string[] | undefined)?.includes(key);
+        })
+      )
+    : ISSUE_TYPE_FILTER_OPTIONS;
+
+  // Client-side category filtering (since the API may not support category param)
+  const categoryFiltered = data?.issues
+    ? (category
+        ? data.issues.filter(i => {
+            const issueCat = getIssueCategory(i.issueType);
+            return issueCat === category;
+          })
+        : data.issues)
+    : [];
 
   const totalPages = data ? Math.ceil(data.pagination.count / PAGE_SIZE) : 0;
-  const allSelected = data?.issues && data.issues.length > 0 && data.issues.every(i => selectedIds.has(i.id));
+
+  // Sort issues client-side
+  const sortedIssues = [...categoryFiltered].sort((a, b) => {
+    if (sortBy === 'revenue') {
+      return (b.estimatedRevenueCents || 0) - (a.estimatedRevenueCents || 0);
+    }
+    if (sortBy === 'severity') {
+      const order: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+      return (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
+    }
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const allSelected = sortedIssues.length > 0 && sortedIssues.every(i => selectedIds.has(i.id));
 
   function toggleAll() {
-    if (!data?.issues) return;
+    if (sortedIssues.length === 0) return;
     if (allSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(data.issues.map(i => i.id)));
+      setSelectedIds(new Set(sortedIssues.map(i => i.id)));
     }
   }
 
@@ -132,24 +188,12 @@ export function IssuesPage() {
       );
       setSelectedIds(new Set());
       mutate();
-    } catch (err) {
+    } catch {
       // silently ignore individual errors
     } finally {
       setBulkActionLoading(false);
     }
   }
-
-  // Sort issues client-side
-  const sortedIssues = data?.issues ? [...data.issues].sort((a, b) => {
-    if (sortBy === 'revenue') {
-      return (b.estimatedRevenueCents || 0) - (a.estimatedRevenueCents || 0);
-    }
-    if (sortBy === 'severity') {
-      const order: Record<string, number> = { critical: 0, warning: 1, info: 2 };
-      return (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
-    }
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  }) : [];
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -197,12 +241,23 @@ export function IssuesPage() {
           </div>
 
           <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="px-3 py-2 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 appearance-none cursor-pointer hover:border-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+          >
+            <option value="">All categories</option>
+            {Object.entries(CATEGORY_FILTER_OPTIONS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+
+          <select
             value={issueType}
             onChange={(e) => setIssueType(e.target.value)}
             className="px-3 py-2 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 appearance-none cursor-pointer hover:border-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
           >
             <option value="">All types</option>
-            {Object.entries(ISSUE_TYPE_LABELS).map(([value, label]) => (
+            {Object.entries(filteredTypeOptions).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
@@ -310,14 +365,23 @@ export function IssuesPage() {
           </div>
 
           <div className="space-y-2">
-            {sortedIssues.map((issue) => (
-              <IssueRow
-                key={issue.id}
-                issue={issue}
-                selected={selectedIds.has(issue.id)}
-                onToggle={() => toggleOne(issue.id)}
-              />
-            ))}
+            {sortedIssues.map((issue) =>
+              isAggregateIssue(issue.issueType) ? (
+                <AggregateIssueRow
+                  key={issue.id}
+                  issue={issue}
+                  selected={selectedIds.has(issue.id)}
+                  onToggle={() => toggleOne(issue.id)}
+                />
+              ) : (
+                <IssueRow
+                  key={issue.id}
+                  issue={issue}
+                  selected={selectedIds.has(issue.id)}
+                  onToggle={() => toggleOne(issue.id)}
+                />
+              )
+            )}
           </div>
 
           {/* Pagination */}
@@ -366,6 +430,169 @@ export function IssuesPage() {
   );
 }
 
+// ---- Category badge for per-user issues ----
+
+function CategoryBadge({ issueType }: { issueType: string }) {
+  const catKey = getIssueCategory(issueType);
+  const cat = DETECTOR_CATEGORIES[catKey];
+  if (!cat) return null;
+  return (
+    <Badge variant={cat.color as any} size="sm">
+      {cat.label}
+    </Badge>
+  );
+}
+
+// ---- Recommended action hint (shown on hover for open issues) ----
+
+function ActionHint({ issueType, issueStatus }: { issueType: string; issueStatus: string }) {
+  if (issueStatus !== 'open') return null;
+  const meta = DETECTOR_META[issueType];
+  if (!meta?.recommendedAction) return null;
+  return (
+    <div className="max-h-0 group-hover:max-h-8 overflow-hidden transition-all duration-200">
+      <div className="flex items-center gap-1.5 mt-1.5">
+        <ArrowRight size={11} className="text-brand-500 flex-shrink-0" />
+        <span className="text-[11px] font-medium text-brand-600 truncate">
+          {meta.recommendedAction}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ---- Scope icon for aggregate issues ----
+
+function ScopeIcon({ issueType }: { issueType: string }) {
+  const catKey = getIssueCategory(issueType);
+  const cat = DETECTOR_CATEGORIES[catKey];
+  const IconComponent = cat ? CATEGORY_ICONS[cat.icon] : null;
+
+  const bgColors: Record<string, string> = {
+    integration_health: 'bg-slate-100 text-slate-600',
+    cross_platform: 'bg-violet-100 text-violet-600',
+    revenue_protection: 'bg-amber-100 text-amber-600',
+    verified: 'bg-emerald-100 text-emerald-600',
+  };
+
+  return (
+    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${bgColors[catKey] ?? 'bg-gray-100 text-gray-600'}`}>
+      {IconComponent ? <IconComponent size={16} /> : <BarChart3 size={16} />}
+    </div>
+  );
+}
+
+// ---- Aggregate Issue Row ----
+
+function AggregateIssueRow({
+  issue,
+  selected,
+  onToggle,
+}: {
+  issue: Issue;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const severityBorderColor: Record<string, string> = {
+    critical: 'border-l-red-500',
+    warning: 'border-l-amber-500',
+    info: 'border-l-blue-500',
+  };
+
+  return (
+    <div
+      className={`group flex items-center gap-3 bg-gradient-to-r from-slate-50/50 to-white rounded-lg border p-4 transition-all border-l-[3px] border-dashed ${
+        severityBorderColor[issue.severity] ?? 'border-l-gray-400'
+      } ${
+        selected
+          ? 'border-brand-500 bg-brand-50/30 shadow-sm'
+          : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+      }`}
+    >
+      <button
+        onClick={(e) => { e.preventDefault(); onToggle(); }}
+        className="flex-shrink-0 hover:opacity-80 transition-opacity"
+      >
+        {selected ? (
+          <CheckSquare size={16} className="text-brand-600" />
+        ) : (
+          <Square size={16} className="text-gray-300" />
+        )}
+      </button>
+
+      <Link
+        to={`/issues/${issue.id}`}
+        className="flex items-center gap-3 flex-1 min-w-0"
+      >
+        <ScopeIcon issueType={issue.issueType} />
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <Badge variant={issue.severity as any} size="sm">{issue.severity}</Badge>
+            <span className="text-xs text-gray-400 font-mono">
+              {ISSUE_TYPE_LABELS[issue.issueType] || issue.issueType}
+            </span>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 text-slate-600 border border-slate-200">
+              <BarChart3 size={10} />
+              System
+            </span>
+          </div>
+          <h3 className="text-sm font-semibold text-gray-900 truncate">{issue.title}</h3>
+          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{issue.description}</p>
+          <AffectedScope issue={issue} />
+          <ActionHint issueType={issue.issueType} issueStatus={issue.status} />
+        </div>
+
+        <div className="text-right flex-shrink-0 w-24">
+          {issue.estimatedRevenueCents != null && issue.estimatedRevenueCents > 0 && (
+            <p className="text-sm font-bold text-red-600">{formatCents(issue.estimatedRevenueCents)}</p>
+          )}
+          <p className="text-[10px] text-gray-400 mt-0.5">est. aggregate</p>
+        </div>
+
+        <div className="text-right flex-shrink-0 w-24">
+          <p className="text-xs text-gray-400">{timeAgo(issue.createdAt)}</p>
+        </div>
+      </Link>
+    </div>
+  );
+}
+
+// ---- Affected scope line for aggregate issues ----
+
+function AffectedScope({ issue }: { issue: Issue }) {
+  const evidence = issue.evidence || {};
+  let scopeText = '';
+
+  if (issue.issueType === 'webhook_delivery_gap') {
+    const provider = (evidence.provider as string) || (evidence.source as string) || 'Provider';
+    scopeText = `Affects: ${provider.charAt(0).toUpperCase() + provider.slice(1)}`;
+  } else if (issue.issueType === 'stale_subscription') {
+    const count = (evidence.affectedCount as number) || (evidence.staleCount as number);
+    const total = (evidence.totalCount as number) || (evidence.totalSubscriptions as number);
+    if (count && total) {
+      scopeText = `Affects: ${count} of ${total} subscriptions (${Math.round((count / total) * 100)}%)`;
+    } else if (count) {
+      scopeText = `Affects: ${count} subscriptions`;
+    } else {
+      scopeText = 'Affects: Multiple subscriptions';
+    }
+  } else if (issue.issueType === 'unusual_renewal_pattern') {
+    const provider = (evidence.provider as string) || (evidence.source as string) || '';
+    scopeText = provider
+      ? `Affects: ${provider.charAt(0).toUpperCase() + provider.slice(1)} subscriptions`
+      : 'Affects: Subscription renewals';
+  } else {
+    scopeText = 'Affects: System-wide';
+  }
+
+  return (
+    <p className="text-[11px] text-gray-400 mt-1">{scopeText}</p>
+  );
+}
+
+// ---- Per-user Issue Row ----
+
 function IssueRow({
   issue,
   selected,
@@ -377,7 +604,7 @@ function IssueRow({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 bg-white rounded-lg border p-4 transition-all ${
+      className={`group flex items-center gap-3 bg-white rounded-lg border p-4 transition-all ${
         selected
           ? 'border-brand-500 bg-brand-50/30 shadow-sm'
           : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
@@ -402,14 +629,22 @@ function IssueRow({
         <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${severityDot(issue.severity)}`} />
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <Badge variant={issue.severity as any} size="sm">{issue.severity}</Badge>
             <span className="text-xs text-gray-400 font-mono">
               {ISSUE_TYPE_LABELS[issue.issueType] || issue.issueType}
             </span>
+            <CategoryBadge issueType={issue.issueType} />
+            {issue.detectionTier === 'app_verified' && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-50 text-green-700 border border-green-200">
+                <CheckCircle size={10} />
+                App Verified
+              </span>
+            )}
           </div>
           <h3 className="text-sm font-semibold text-gray-900 truncate">{issue.title}</h3>
           <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{issue.description}</p>
+          <ActionHint issueType={issue.issueType} issueStatus={issue.status} />
         </div>
 
         <div className="text-right flex-shrink-0 w-24">

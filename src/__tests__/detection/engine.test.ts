@@ -23,35 +23,7 @@ vi.mock('../../slack/notifications.js', () => ({
   notifyCxChannel: vi.fn().mockResolvedValue(undefined),
 }));
 
-// Mock all individual detectors to control their behavior in tests
-vi.mock('../../detection/detectors/paid-no-access.js', () => ({
-  paidNoAccessDetector: {
-    id: 'paid_no_access',
-    name: 'Paid but No Access',
-    description: 'Test',
-    checkEvent: vi.fn().mockResolvedValue([]),
-  },
-}));
-
-vi.mock('../../detection/detectors/access-no-payment.js', () => ({
-  accessNoPaymentDetector: {
-    id: 'access_no_payment',
-    name: 'Access without Payment',
-    description: 'Test',
-    checkEvent: vi.fn().mockResolvedValue([]),
-    scheduledScan: vi.fn().mockResolvedValue([]),
-  },
-}));
-
-vi.mock('../../detection/detectors/refund-still-active.js', () => ({
-  refundStillActiveDetector: {
-    id: 'refund_still_active',
-    name: 'Refund but Still Active',
-    description: 'Test',
-    checkEvent: vi.fn().mockResolvedValue([]),
-  },
-}));
-
+// Mock all 8 registered detectors
 vi.mock('../../detection/detectors/webhook-gap.js', () => ({
   webhookGapDetector: {
     id: 'webhook_delivery_gap',
@@ -62,42 +34,68 @@ vi.mock('../../detection/detectors/webhook-gap.js', () => ({
   },
 }));
 
-vi.mock('../../detection/detectors/cross-platform-mismatch.js', () => ({
-  crossPlatformMismatchDetector: {
-    id: 'cross_platform_mismatch',
-    name: 'Cross-Platform State Mismatch',
+vi.mock('../../detection/detectors/duplicate-billing.js', () => ({
+  duplicateBillingDetector: {
+    id: 'duplicate_billing',
+    name: 'Duplicate Billing',
     description: 'Test',
     checkEvent: vi.fn().mockResolvedValue([]),
     scheduledScan: vi.fn().mockResolvedValue([]),
   },
 }));
 
-vi.mock('../../detection/detectors/silent-renewal-failure.js', () => ({
-  silentRenewalFailureDetector: {
-    id: 'silent_renewal_failure',
-    name: 'Silent Renewal Failure',
+vi.mock('../../detection/detectors/refund-still-active.js', () => ({
+  refundStillActiveDetector: {
+    id: 'unrevoked_refund',
+    name: 'Refund Without Access Revocation',
     description: 'Test',
     checkEvent: vi.fn().mockResolvedValue([]),
     scheduledScan: vi.fn().mockResolvedValue([]),
   },
 }));
 
-vi.mock('../../detection/detectors/trial-no-conversion.js', () => ({
-  trialNoConversionDetector: {
-    id: 'trial_no_conversion',
-    name: 'Trial Expired Without Conversion',
+vi.mock('../../detection/detectors/cross-platform-conflict.js', () => ({
+  crossPlatformConflictDetector: {
+    id: 'cross_platform_conflict',
+    name: 'Cross-Platform Conflict',
     description: 'Test',
     checkEvent: vi.fn().mockResolvedValue([]),
     scheduledScan: vi.fn().mockResolvedValue([]),
   },
 }));
 
-vi.mock('../../detection/detectors/stale-subscription.js', () => ({
-  staleSubscriptionDetector: {
-    id: 'stale_subscription',
-    name: 'Stale Subscription',
+vi.mock('../../detection/detectors/renewal-anomaly.js', () => ({
+  renewalAnomalyDetector: {
+    id: 'renewal_anomaly',
+    name: 'Renewal Anomaly',
     description: 'Test',
-    checkEvent: vi.fn().mockResolvedValue([]),
+    scheduledScan: vi.fn().mockResolvedValue([]),
+  },
+}));
+
+vi.mock('../../detection/detectors/data-freshness.js', () => ({
+  dataFreshnessDetector: {
+    id: 'data_freshness',
+    name: 'Data Freshness',
+    description: 'Test',
+    scheduledScan: vi.fn().mockResolvedValue([]),
+  },
+}));
+
+vi.mock('../../detection/detectors/verified-paid-no-access.js', () => ({
+  verifiedPaidNoAccessDetector: {
+    id: 'verified_paid_no_access',
+    name: 'Paid But No Access',
+    description: 'Test',
+    scheduledScan: vi.fn().mockResolvedValue([]),
+  },
+}));
+
+vi.mock('../../detection/detectors/verified-access-no-payment.js', () => ({
+  verifiedAccessNoPaymentDetector: {
+    id: 'verified_access_no_payment',
+    name: 'Access Without Payment',
+    description: 'Test',
     scheduledScan: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -124,14 +122,14 @@ describe('IssueDetectionEngine', () => {
       const detectors = engine.getDetectors();
 
       const ids = detectors.map(d => d.id);
-      expect(ids).toContain('paid_no_access');
-      expect(ids).toContain('access_no_payment');
-      expect(ids).toContain('refund_still_active');
       expect(ids).toContain('webhook_delivery_gap');
-      expect(ids).toContain('cross_platform_mismatch');
-      expect(ids).toContain('silent_renewal_failure');
-      expect(ids).toContain('trial_no_conversion');
-      expect(ids).toContain('stale_subscription');
+      expect(ids).toContain('duplicate_billing');
+      expect(ids).toContain('unrevoked_refund');
+      expect(ids).toContain('cross_platform_conflict');
+      expect(ids).toContain('renewal_anomaly');
+      expect(ids).toContain('data_freshness');
+      expect(ids).toContain('verified_paid_no_access');
+      expect(ids).toContain('verified_access_no_payment');
     });
 
     it('should indicate which detectors have scheduled scans', () => {
@@ -146,28 +144,27 @@ describe('IssueDetectionEngine', () => {
   });
 
   describe('checkForIssues', () => {
-    it('should run all detectors for an event', async () => {
+    it('should run all event-triggered detectors for an event', async () => {
       const event = createTestCanonicalEvent(orgId) as CanonicalEvent;
       mockDb._configureSelectResult([]);
 
       await engine.checkForIssues(orgId, userId, event);
 
-      // All detectors should have been called
-      const { paidNoAccessDetector } = await import('../../detection/detectors/paid-no-access.js');
-      expect(paidNoAccessDetector.checkEvent).toHaveBeenCalled();
+      // Webhook gap detector has checkEvent, so it should have been called
+      const { webhookGapDetector } = await import('../../detection/detectors/webhook-gap.js');
+      expect(webhookGapDetector.checkEvent).toHaveBeenCalled();
     });
 
     it('should create issues when detectors find problems', async () => {
-      // Make one detector return an issue
-      const { paidNoAccessDetector } = await import('../../detection/detectors/paid-no-access.js');
-      (paidNoAccessDetector.checkEvent as any).mockResolvedValueOnce([{
-        issueType: 'paid_no_access',
-        severity: 'critical',
+      const { webhookGapDetector } = await import('../../detection/detectors/webhook-gap.js');
+      (webhookGapDetector.checkEvent as any).mockResolvedValueOnce([{
+        issueType: 'webhook_delivery_gap',
+        severity: 'warning',
         title: 'Test issue',
         description: 'Test description',
-        userId,
-        estimatedRevenueCents: 1999,
-        confidence: 0.95,
+        userId: null,
+        estimatedRevenueCents: 0,
+        confidence: 0.85,
         evidence: { test: true },
       }]);
 
@@ -177,8 +174,8 @@ describe('IssueDetectionEngine', () => {
       mockDb._configureInsertResult([{
         id: 'new-issue-id',
         orgId,
-        userId,
-        issueType: 'paid_no_access',
+        userId: null,
+        issueType: 'webhook_delivery_gap',
       }]);
 
       const event = createTestCanonicalEvent(orgId) as CanonicalEvent;
@@ -189,14 +186,14 @@ describe('IssueDetectionEngine', () => {
     });
 
     it('should deduplicate issues (skip existing open issues)', async () => {
-      const { paidNoAccessDetector } = await import('../../detection/detectors/paid-no-access.js');
-      (paidNoAccessDetector.checkEvent as any).mockResolvedValueOnce([{
-        issueType: 'paid_no_access',
-        severity: 'critical',
+      const { webhookGapDetector } = await import('../../detection/detectors/webhook-gap.js');
+      (webhookGapDetector.checkEvent as any).mockResolvedValueOnce([{
+        issueType: 'webhook_delivery_gap',
+        severity: 'warning',
         title: 'Duplicate test',
         description: 'Test',
-        userId,
-        confidence: 0.95,
+        userId: null,
+        confidence: 0.85,
         evidence: {},
       }]);
 
@@ -211,16 +208,16 @@ describe('IssueDetectionEngine', () => {
     });
 
     it('should continue running other detectors when one fails', async () => {
-      const { paidNoAccessDetector } = await import('../../detection/detectors/paid-no-access.js');
-      (paidNoAccessDetector.checkEvent as any).mockRejectedValueOnce(new Error('Detector crash'));
+      const { webhookGapDetector } = await import('../../detection/detectors/webhook-gap.js');
+      (webhookGapDetector.checkEvent as any).mockRejectedValueOnce(new Error('Detector crash'));
 
-      const { accessNoPaymentDetector } = await import('../../detection/detectors/access-no-payment.js');
+      const { refundStillActiveDetector } = await import('../../detection/detectors/refund-still-active.js');
 
       const event = createTestCanonicalEvent(orgId) as CanonicalEvent;
       await engine.checkForIssues(orgId, userId, event);
 
-      // Should not throw, and other detectors should still be called
-      expect(accessNoPaymentDetector.checkEvent).toHaveBeenCalled();
+      // Should not throw, and other detectors with checkEvent should still be called
+      expect(refundStillActiveDetector.checkEvent).toHaveBeenCalled();
     });
   });
 });

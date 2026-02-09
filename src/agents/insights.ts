@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, count, sum, sql } from 'drizzle-orm';
+import { eq, and, desc, gte, lt, count, sum } from 'drizzle-orm';
 import type { Database } from '../config/database.js';
 import { issues, canonicalEvents, entitlements } from '../models/schema.js';
 import { callClaude, parseJsonFromResponse, isAiEnabled } from './client.js';
@@ -244,7 +244,7 @@ async function gatherMetrics(
       and(
         eq(issues.orgId, orgId),
         gte(issues.createdAt, previousStart),
-        sql`${issues.createdAt} < ${currentStart}`,
+        lt(issues.createdAt, currentStart),
       ),
     );
 
@@ -256,7 +256,7 @@ async function gatherMetrics(
         eq(issues.orgId, orgId),
         eq(issues.severity, 'critical'),
         gte(issues.createdAt, previousStart),
-        sql`${issues.createdAt} < ${currentStart}`,
+        lt(issues.createdAt, currentStart),
       ),
     );
 
@@ -268,7 +268,7 @@ async function gatherMetrics(
         eq(issues.orgId, orgId),
         eq(issues.status, 'resolved'),
         gte(issues.updatedAt, previousStart),
-        sql`${issues.updatedAt} < ${currentStart}`,
+        lt(issues.updatedAt, currentStart),
       ),
     );
 
@@ -280,7 +280,7 @@ async function gatherMetrics(
         eq(issues.orgId, orgId),
         eq(issues.status, 'dismissed'),
         gte(issues.updatedAt, previousStart),
-        sql`${issues.updatedAt} < ${currentStart}`,
+        lt(issues.updatedAt, currentStart),
       ),
     );
 
@@ -292,7 +292,7 @@ async function gatherMetrics(
         eq(issues.orgId, orgId),
         eq(issues.status, 'open'),
         gte(issues.createdAt, previousStart),
-        sql`${issues.createdAt} < ${currentStart}`,
+        lt(issues.createdAt, currentStart),
       ),
     );
 
@@ -303,7 +303,7 @@ async function gatherMetrics(
       and(
         eq(canonicalEvents.orgId, orgId),
         gte(canonicalEvents.eventTime, previousStart),
-        sql`${canonicalEvents.eventTime} < ${currentStart}`,
+        lt(canonicalEvents.eventTime, currentStart),
       ),
     );
 
@@ -315,7 +315,7 @@ async function gatherMetrics(
         eq(canonicalEvents.orgId, orgId),
         eq(canonicalEvents.status, 'failed'),
         gte(canonicalEvents.eventTime, previousStart),
-        sql`${canonicalEvents.eventTime} < ${currentStart}`,
+        lt(canonicalEvents.eventTime, currentStart),
       ),
     );
 

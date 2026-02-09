@@ -16,7 +16,7 @@ describe('RefundStillActiveDetector', () => {
 
   describe('metadata', () => {
     it('should have correct detector id', () => {
-      expect(refundStillActiveDetector.id).toBe('refund_still_active');
+      expect(refundStillActiveDetector.id).toBe('unrevoked_refund');
     });
   });
 
@@ -39,7 +39,7 @@ describe('RefundStillActiveDetector', () => {
       const issues = await refundStillActiveDetector.checkEvent(mockDb, orgId, userId, event);
 
       expect(issues).toHaveLength(1);
-      expect(issues[0].issueType).toBe('refund_still_active');
+      expect(issues[0].issueType).toBe('unrevoked_refund');
       expect(issues[0].severity).toBe('warning');
       expect(issues[0].confidence).toBe(0.92);
       expect(issues[0].estimatedRevenueCents).toBe(1999);
@@ -245,8 +245,8 @@ describe('RefundStillActiveDetector', () => {
   });
 
   describe('scheduledScan', () => {
-    it('should not have a scheduledScan method (event-triggered only)', () => {
-      expect(refundStillActiveDetector.scheduledScan).toBeUndefined();
+    it('should have a scheduledScan method', () => {
+      expect(refundStillActiveDetector.scheduledScan).toBeDefined();
     });
   });
 });

@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import useSWR from 'swr';
+import { getApiKey, setApiKey, DEMO_API_KEY, fetcher } from '../lib/api';
 import {
   LayoutDashboard,
   AlertTriangle,
@@ -8,6 +10,7 @@ import {
   Settings,
   Bell,
   Sparkles,
+  Radar,
   Menu,
   X,
   ChevronDown,
@@ -24,12 +27,26 @@ const navItems = [
   { to: '/events', icon: Activity, label: 'Events' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/insights', icon: Sparkles, label: 'Insights' },
+  { to: '/monitors', icon: Radar, label: 'Monitors' },
 ];
 
 export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const isDemo = getApiKey() === DEMO_API_KEY;
+  const { data: issuesSummary } = useSWR<{ open: number }>(
+    getApiKey() ? '/issues/summary' : null,
+    fetcher,
+    { refreshInterval: 30000 },
+  );
+
+  function handleLogout() {
+    setApiKey('');
+    localStorage.removeItem('revback_api_key');
+    navigate('/login');
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -57,7 +74,7 @@ export function Layout() {
             <div>
               <h1 className="text-base font-bold text-white tracking-tight">RevBack</h1>
               <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">
-                Subscription Guard
+                Billing Issue Detection
               </p>
             </div>
           </div>
@@ -92,9 +109,9 @@ export function Layout() {
               >
                 <Icon size={18} className={isActive ? 'text-brand-500' : ''} />
                 {label}
-                {label === 'Issues' && (
+                {label === 'Issues' && issuesSummary && issuesSummary.open > 0 && (
                   <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                    3
+                    {issuesSummary.open}
                   </span>
                 )}
               </NavLink>
@@ -144,11 +161,23 @@ export function Layout() {
 
             {userMenuOpen && (
               <div className="absolute bottom-full left-0 right-0 mb-1 bg-sidebar-lighter rounded-lg border border-white/10 shadow-xl overflow-hidden">
-                <button className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                <button
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    navigate('/settings/account');
+                  }}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                >
                   <User size={14} />
                   Account Settings
                 </button>
-                <button className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors border-t border-white/5">
+                <button
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors border-t border-white/5"
+                >
                   <LogOut size={14} />
                   Sign Out
                 </button>
@@ -175,6 +204,13 @@ export function Layout() {
             <span className="text-sm font-bold text-gray-900">RevBack</span>
           </div>
         </div>
+
+        {/* Demo banner */}
+        {isDemo && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-700">
+            You're viewing demo data
+          </div>
+        )}
 
         {/* Scrollable content */}
         <main className="flex-1 overflow-auto bg-gray-50">

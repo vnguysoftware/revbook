@@ -16,7 +16,7 @@ describe('AccessNoPaymentDetector', () => {
 
   describe('metadata', () => {
     it('should have correct detector id', () => {
-      expect(accessNoPaymentDetector.id).toBe('access_no_payment');
+      expect(accessNoPaymentDetector.id).toBe('entitlement_without_payment');
     });
   });
 
@@ -38,7 +38,7 @@ describe('AccessNoPaymentDetector', () => {
       const issues = await accessNoPaymentDetector.checkEvent(mockDb, orgId, userId, event);
 
       expect(issues).toHaveLength(1);
-      expect(issues[0].issueType).toBe('access_no_payment');
+      expect(issues[0].issueType).toBe('entitlement_without_payment');
       expect(issues[0].severity).toBe('warning');
       expect(issues[0].confidence).toBe(0.80);
     });

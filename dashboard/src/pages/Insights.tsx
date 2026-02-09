@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '../lib/api';
 import { formatCents } from '../lib/format';
+import { ISSUE_TYPE_LABELS } from '../lib/constants';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -392,7 +393,7 @@ export function InsightsPage() {
                     {healthData.detectors.map((d) => (
                       <tr key={d.detectorId} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-4 py-3">
-                          <span className="font-medium text-gray-900">{d.detectorId}</span>
+                          <span className="font-medium text-gray-900">{ISSUE_TYPE_LABELS[d.detectorId] || d.detectorId}</span>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-600">{d.totalDetected}</td>
                         <td className="px-4 py-3 text-right">

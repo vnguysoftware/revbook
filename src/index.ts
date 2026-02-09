@@ -12,6 +12,7 @@ import { createUserRoutes } from './api/users.js';
 import { createDashboardRoutes } from './api/dashboard.js';
 import { createOnboardingRoutes } from './api/onboarding.js';
 import { createAlertRoutes } from './api/alerts.js';
+import { createAccessCheckRoutes } from './api/access-checks.js';
 import { createFirstLookRoutes } from './api/first-look.js';
 import { createDlqRoutes } from './queue/dlq.js';
 import { createQueueMonitorRoutes } from './queue/monitor.js';
@@ -90,12 +91,15 @@ const auth = createAuthMiddleware(db);
 
 const api = new Hono();
 api.use('*', auth);
+// AI routes mounted first so /issues/incidents and /issues/:id/investigation
+// are matched before the generic /issues/:issueId wildcard in issue routes.
+api.route('/', createAiRoutes(db));
 api.route('/issues', createIssueRoutes(db));
 api.route('/users', createUserRoutes(db));
 api.route('/dashboard', createDashboardRoutes(db));
 api.route('/first-look', createFirstLookRoutes(db));
 api.route('/alerts', createAlertRoutes(db));
-api.route('/', createAiRoutes(db));
+api.route('/access-checks', createAccessCheckRoutes(db));
 
 // Admin routes (also authenticated)
 api.route('/admin/dlq', createDlqRoutes());

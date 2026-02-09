@@ -3,6 +3,13 @@ import { useParams, Link } from 'react-router-dom';
 import useSWR, { mutate } from 'swr';
 import { fetcher, apiFetch } from '../lib/api';
 import { formatCents, formatDate, timeAgo, severityDot } from '../lib/format';
+import {
+  ISSUE_TYPE_LABELS,
+  DETECTOR_META,
+  DETECTOR_CATEGORIES,
+  getIssueCategory,
+  getDetectorMeta,
+} from '../lib/constants';
 import { Badge } from '../components/ui/Badge';
 import { Card, CardHeader } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -24,6 +31,12 @@ import {
   Shield,
   ChevronDown,
   ChevronRight,
+  Lightbulb,
+  BadgeCheck,
+  BarChart3,
+  Wifi,
+  GitCompare,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface Issue {
@@ -37,23 +50,147 @@ interface Issue {
   confidence: number | null;
   userId: string | null;
   detectorId: string;
-  evidence: Record<string, unknown>;
+  detectionTier: string | null;
+  evidence: Record<string, any>;
   resolution: string | null;
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-const ISSUE_TYPE_LABELS: Record<string, string> = {
-  paid_no_access: 'Paid but No Access',
-  access_no_payment: 'Access without Payment',
-  cross_platform_mismatch: 'Cross-Platform Mismatch',
-  duplicate_subscription: 'Duplicate Subscription',
-  refund_still_active: 'Refund Still Active',
-  silent_renewal_failure: 'Silent Renewal Failure',
-  trial_no_conversion: 'Trial Not Converted',
-  webhook_delivery_gap: 'Webhook Gap',
+const RECOMMENDED_ACTION_TEXT: Record<string, string> = {
+  webhook_delivery_gap:
+    'Check your provider webhook configuration in the provider dashboard. Verify the endpoint URL is correct and the signing secret matches. If the provider is experiencing an outage, monitor their status page.',
+  stale_subscription:
+    'Review subscriptions with stale data. These accounts may have churned silently or have broken webhook delivery. Consider triggering a re-sync via the Stripe API to refresh their state.',
+  duplicate_subscription:
+    'This user is paying on multiple platforms. Cancel the duplicate subscription on the platform the user does not actively use, and issue a prorated refund for the overlap period.',
+  cross_platform_mismatch:
+    'Compare subscription states in both platforms. One shows active while the other shows expired. Determine the correct state and sync them.',
+  refund_not_revoked:
+    'A refund was processed but the user\'s access was not revoked. Update the user\'s entitlement state to "refunded" and revoke access. For chargebacks, also flag the account for review.',
+  unusual_renewal_pattern:
+    'Renewal rates dropped significantly vs baseline. Investigate whether this correlates with a pricing change, payment method expiry cohort, or a billing provider issue. Check failed payment logs.',
+  verified_paid_no_access:
+    'URGENT: This paying customer cannot access the product. Provision their entitlement immediately. Check your access provisioning logic for race conditions or webhook processing delays.',
+  verified_access_no_payment:
+    'This user has access without an active payment. Verify whether this is intentional (comp/internal account) or a provisioning bug. If unauthorized, revoke access and investigate the access grant path.',
+  // Seed data / legacy detector IDs
+  payment_without_entitlement:
+    'Check webhook processing pipeline. A payment was received but the subscription state was not updated. Verify your webhook handler provisions entitlements after successful payments.',
+  entitlement_without_payment:
+    'Review this user\'s billing history. Their subscription appears active but no recent payment was recorded. Check if a renewal webhook was missed or if the billing provider shows a different status.',
+  silent_renewal_failure:
+    'Check if this user\'s renewal was expected. Review their payment method status and contact the billing provider if the renewal appears stuck.',
+  trial_no_conversion:
+    'Review if this user intended to convert. Consider sending a targeted win-back email or extending the trial if they showed engagement.',
+  // Backend detector IDs
+  unrevoked_refund:
+    'A refund was processed but the user\'s access was not revoked. Update the user\'s entitlement state to "refunded" and revoke access immediately.',
+  duplicate_billing:
+    'This user is paying on multiple platforms simultaneously. Cancel the duplicate subscription and issue a prorated refund for the overlap period.',
+  cross_platform_conflict:
+    'The user\'s subscription state differs between platforms. Review both platform dashboards to determine the correct state and reconcile.',
+  renewal_anomaly:
+    'Renewal rates dropped significantly vs baseline. Investigate whether this correlates with a pricing change, payment method expiry cohort, or billing provider issue.',
+  data_freshness:
+    'Review stale subscriptions and trigger a data re-sync with the billing provider. These accounts may have churned silently or have broken webhook delivery.',
 };
+
+const CATEGORY_ICONS: Record<string, React.ElementType> = {
+  integration_health: Wifi,
+  cross_platform: GitCompare,
+  revenue_protection: ShieldAlert,
+  verified: BadgeCheck,
+};
+
+// Human-readable labels for common evidence field names
+const EVIDENCE_KEY_LABELS: Record<string, string> = {
+  adjustedImpact: 'Adjusted Impact',
+  estimatedImpact: 'Estimated Impact',
+  estimatedRevenueCents: 'Estimated Revenue',
+  revenueAtRiskCents: 'Revenue at Risk',
+  revenueCents: 'Revenue',
+  gapDuration: 'Gap Duration',
+  gap_duration: 'Gap Duration',
+  missedWebhooks: 'Missed Webhooks',
+  missed_webhooks: 'Missed Webhooks',
+  estimatedMissed: 'Estimated Missed',
+  staleCount: 'Stale Count',
+  stale_count: 'Stale Count',
+  totalCount: 'Total Count',
+  total_count: 'Total Count',
+  affectedCount: 'Affected Count',
+  lastWebhookAt: 'Last Webhook',
+  last_webhook_at: 'Last Webhook',
+  currentRate: 'Current Rate',
+  baselineRate: 'Baseline Rate',
+  entitlementState: 'Subscription State',
+  subscriptionStatus: 'Subscription Status',
+  paymentStatus: 'Payment Status',
+  detectorId: 'Detector',
+  issueType: 'Issue Type',
+  userId: 'User ID',
+  stripeCustomerId: 'Stripe Customer',
+  stripeSubscriptionId: 'Stripe Subscription',
+  productId: 'Product',
+  refundAmount: 'Refund Amount',
+  refundAmountCents: 'Refund Amount',
+  lastPaymentAmount: 'Last Payment',
+  expectedPaymentAmount: 'Expected Payment',
+  subscriptionAmount: 'Subscription Amount',
+  potentialMonthlyRevenue: 'Potential Monthly Revenue',
+};
+
+// Keys whose numeric values represent cents and should be formatted as currency
+const CENTS_KEYS = new Set([
+  'adjustedImpact',
+  'estimatedImpact',
+  'estimatedRevenueCents',
+  'revenueAtRiskCents',
+  'revenueCents',
+  'refundAmount',
+  'refundAmountCents',
+  'amount',
+  'amountCents',
+]);
+
+function formatEvidenceKey(key: string): string {
+  if (EVIDENCE_KEY_LABELS[key]) return EVIDENCE_KEY_LABELS[key];
+  // Fall back to humanizing the raw key
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .trim();
+}
+
+function formatEvidenceValue(key: string, value: unknown): string {
+  if (value == null) return '--';
+  if (typeof value === 'number' &&
+      (CENTS_KEYS.has(key) || /amount|impact|revenue|cents|price/i.test(key))) {
+    return formatCents(value);
+  }
+  return String(value);
+}
+
+const STRIPE_ID_PREFIXES: Record<string, string> = {
+  'sub_': 'https://dashboard.stripe.com/subscriptions/',
+  'cus_': 'https://dashboard.stripe.com/customers/',
+  'ch_': 'https://dashboard.stripe.com/payments/',
+  'py_': 'https://dashboard.stripe.com/payments/',
+  'in_': 'https://dashboard.stripe.com/invoices/',
+  're_': 'https://dashboard.stripe.com/refunds/',
+};
+
+function getStripeUrl(value: string): string | null {
+  for (const [prefix, baseUrl] of Object.entries(STRIPE_ID_PREFIXES)) {
+    if (value.startsWith(prefix)) {
+      return baseUrl + value;
+    }
+  }
+  return null;
+}
 
 export function IssueDetailPage() {
   const { issueId } = useParams<{ issueId: string }>();
@@ -139,12 +276,29 @@ export function IssueDetailPage() {
             <div className="flex items-center gap-2 mb-3">
               <Badge variant={issue.severity as any} dot>{issue.severity}</Badge>
               <Badge variant={issue.status as any}>{issue.status}</Badge>
+              <CategoryBadge issueType={issue.issueType} />
               <span className="text-xs text-gray-400 font-mono">
                 {ISSUE_TYPE_LABELS[issue.issueType] || issue.issueType}
               </span>
             </div>
             <h1 className="text-xl font-bold text-gray-900 mb-2">{issue.title}</h1>
             <p className="text-sm text-gray-600 leading-relaxed">{issue.description}</p>
+            {issue.detectionTier === 'app_verified' && (
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg mt-3">
+                <BadgeCheck size={18} className="text-emerald-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-emerald-800">Verified by App Integration</p>
+                  <p className="text-xs text-emerald-600">
+                    Your app confirmed this user's access state at {formatDate(issue.updatedAt)}
+                  </p>
+                </div>
+                {issue.confidence != null && (
+                  <span className="text-sm font-bold text-emerald-700 flex-shrink-0">
+                    {Math.round(issue.confidence * 100)}% confidence
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-4 text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100">
               <span className="flex items-center gap-1.5">
@@ -156,7 +310,7 @@ export function IssueDetailPage() {
                 </span>
               )}
               <span className="flex items-center gap-1.5">
-                <Shield size={13} /> Detector: <code className="font-mono">{issue.detectorId}</code>
+                <Shield size={13} /> Detector: {ISSUE_TYPE_LABELS[issue.detectorId] || ISSUE_TYPE_LABELS[issue.issueType] || issue.detectorId}
               </span>
               {issue.confidence != null && (
                 <span className="flex items-center gap-1.5">
@@ -243,6 +397,12 @@ export function IssueDetailPage() {
         )}
       </Card>
 
+      {/* Recommended Action */}
+      <RecommendedActionCard
+        issue={issue}
+        onAcknowledge={() => setConfirmAction('acknowledge')}
+      />
+
       <AiInvestigationSection issueId={issueId!} />
 
       {/* Evidence */}
@@ -266,14 +426,29 @@ export function IssueDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
             {evidenceEntries.map(([key, value]) => {
               if (typeof value === 'object' && value !== null) return null;
+              const label = formatEvidenceKey(key);
+              const display = formatEvidenceValue(key, value);
+              const stripeUrl = typeof value === 'string' ? getStripeUrl(value) : null;
               return (
                 <div key={key} className="flex items-baseline justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
                   <span className="text-xs font-medium text-gray-500 capitalize">
-                    {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}
+                    {label}
                   </span>
-                  <span className="text-sm font-medium text-gray-900 font-mono">
-                    {String(value)}
-                  </span>
+                  {stripeUrl ? (
+                    <a
+                      href={stripeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sm font-medium font-mono text-brand-600 hover:text-brand-700 transition-colors"
+                    >
+                      {display}
+                      <ExternalLink size={12} className="flex-shrink-0" />
+                    </a>
+                  ) : (
+                    <span className="text-sm font-medium text-gray-900 font-mono">
+                      {display}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -317,8 +492,8 @@ export function IssueDetailPage() {
         </Card>
       )}
 
-      {/* Affected User */}
-      {issue.userId && (
+      {/* Affected User (per-user) or Affected Scope (aggregate) */}
+      {issue.userId ? (
         <Card padding="md" className="mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -339,6 +514,8 @@ export function IssueDetailPage() {
             </Link>
           </div>
         </Card>
+      ) : (
+        <AffectedScopeCard issue={issue} />
       )}
 
       {/* Related Issues Placeholder */}
@@ -375,7 +552,7 @@ interface InvestigationResponse {
   message?: string;
 }
 
-function AiInvestigationSection({ issueId }: { issueId: string }): React.ReactElement {
+function AiInvestigationSection({ issueId }: { issueId: string }) {
   const [showReasoning, setShowReasoning] = useState(false);
 
   const { data, isLoading, error } = useSWR<InvestigationResponse, Error>(
@@ -388,6 +565,16 @@ function AiInvestigationSection({ issueId }: { issueId: string }): React.ReactEl
   );
 
   const investigation = data?.investigation;
+
+  // Hide the entire section when AI investigation is not available or errored
+  if (error || (data && !data.available && !investigation)) {
+    return null;
+  }
+
+  // Hide while loading (no skeleton/spinner for an optional feature)
+  if (isLoading) {
+    return null;
+  }
 
   return (
     <Card padding="lg" className="mb-6">
@@ -402,34 +589,7 @@ function AiInvestigationSection({ issueId }: { issueId: string }): React.ReactEl
         }
       />
 
-      {isLoading ? (
-        <div className="bg-gradient-to-br from-gray-50 to-blue-50/30 rounded-lg border border-gray-200 p-6">
-          <div className="flex items-center gap-3 text-sm text-gray-500">
-            <Loader2 size={16} className="animate-spin text-blue-500" />
-            Analyzing issue...
-          </div>
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 rounded-lg border border-red-200 p-4 text-sm text-red-600">
-          Failed to load AI investigation.
-        </div>
-      ) : data && !data.available ? (
-        <div className="bg-gradient-to-br from-gray-50 to-blue-50/30 rounded-lg border border-gray-200 p-6">
-          <div className="flex flex-col items-center text-center py-4">
-            <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center mb-3">
-              <Sparkles size={20} className="text-blue-600" />
-            </div>
-            <h4 className="text-sm font-semibold text-gray-900 mb-1">Root Cause Analysis</h4>
-            <p className="text-sm text-gray-500 max-w-md mb-4">
-              AI-powered investigation can analyze this issue, determine the root cause,
-              assess impact, and recommend actions.
-            </p>
-            <p className="text-xs text-gray-400">
-              AI-powered root cause analysis will be available here once enabled for your account.
-            </p>
-          </div>
-        </div>
-      ) : data?.status === 'processing' ? (
+      {data?.status === 'processing' ? (
         <div className="bg-gradient-to-br from-gray-50 to-blue-50/30 rounded-lg border border-gray-200 p-6">
           <div className="flex items-center gap-3 text-sm text-gray-600">
             <Loader2 size={16} className="animate-spin text-blue-500" />
@@ -525,6 +685,193 @@ function AiInvestigationSection({ issueId }: { issueId: string }): React.ReactEl
           </p>
         </div>
       ) : null}
+    </Card>
+  );
+}
+
+// ─── Affected Scope Card (for aggregate issues) ─────────────────────
+
+// ─── Category Badge ─────────────────────────────────────────────────
+
+function CategoryBadge({ issueType }: { issueType: string }) {
+  const catKey = getIssueCategory(issueType);
+  const cat = DETECTOR_CATEGORIES[catKey];
+  const CatIcon = CATEGORY_ICONS[catKey];
+  return (
+    <Badge variant={cat.color as any}>
+      {CatIcon && <CatIcon size={12} />}
+      {cat.label}
+    </Badge>
+  );
+}
+
+// ─── Recommended Action Card ────────────────────────────────────────
+
+function RecommendedActionCard({ issue, onAcknowledge }: { issue: Issue; onAcknowledge: () => void }) {
+  const meta = getDetectorMeta(issue.issueType);
+  const actionText = RECOMMENDED_ACTION_TEXT[issue.issueType] || meta?.recommendedAction || '';
+
+  const isPerUser = meta?.scope === 'per_user';
+
+  return (
+    <Card padding="md" className="mb-6 border-l-4 border-l-brand-500 bg-gradient-to-r from-brand-50/30 to-white">
+      <div className="flex items-start gap-4">
+        <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0">
+          <Lightbulb size={20} className="text-brand-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-brand-600 uppercase tracking-wider">Recommended Action</p>
+          <p className="text-sm text-gray-800 mt-1 leading-relaxed">{actionText}</p>
+          <div className="flex items-center gap-3 mt-3">
+            {isPerUser && issue.userId ? (
+              <Link
+                to={`/users/${issue.userId}`}
+                className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
+              >
+                View User Profile <ArrowRight size={12} />
+              </Link>
+            ) : (
+              <Link
+                to={`/issues?type=${issue.issueType}`}
+                className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
+              >
+                View Affected Issues <ArrowRight size={12} />
+              </Link>
+            )}
+            {issue.status === 'open' && (
+              <button
+                onClick={onAcknowledge}
+                className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Mark as Acknowledged
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Affected Scope Card (for aggregate issues) ─────────────────────
+
+function AffectedScopeCard({ issue }: { issue: Issue }) {
+  const evidence = issue.evidence as Record<string, any>;
+
+  if (issue.issueType === 'webhook_delivery_gap') {
+    const gapDuration = evidence.gapDuration || evidence.gap_duration || 'Unknown';
+    const missedWebhooks = evidence.missedWebhooks || evidence.missed_webhooks || evidence.estimatedMissed || '~N/A';
+    const provider = evidence.provider || evidence.source || 'Unknown';
+    const lastWebhook = evidence.lastWebhookAt || evidence.last_webhook_at || null;
+    return (
+      <Card padding="lg" className="mb-6">
+        <CardHeader title="Affected Scope" subtitle="System-wide impact assessment" />
+        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+          <Wifi size={18} className="text-slate-500" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-900 capitalize">{provider}</p>
+            <p className="text-xs text-gray-500">
+              {lastWebhook ? `Last webhook: ${timeAgo(lastWebhook)}` : 'No recent webhooks'}
+            </p>
+          </div>
+          <span className="w-2 h-2 rounded-full bg-red-500" title="Gap detected" />
+        </div>
+        <div className="grid grid-cols-3 gap-3 mt-3">
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <p className="text-xs font-medium text-gray-500">Gap Duration</p>
+            <p className="text-lg font-bold text-gray-900">{gapDuration}</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <p className="text-xs font-medium text-gray-500">Missed Webhooks (est.)</p>
+            <p className="text-lg font-bold text-gray-900">{missedWebhooks}</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <p className="text-xs font-medium text-gray-500">Revenue at Risk</p>
+            <p className="text-lg font-bold text-red-600">
+              {issue.estimatedRevenueCents != null ? formatCents(issue.estimatedRevenueCents) : 'N/A'}
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (issue.issueType === 'stale_subscription') {
+    const staleCount = evidence.staleCount || evidence.stale_count || 0;
+    const totalCount = evidence.totalCount || evidence.total_count || 0;
+    const staleRate = totalCount > 0 ? (staleCount / totalCount) * 100 : 0;
+    const rateColor = staleRate > 10 ? 'text-red-600' : staleRate > 5 ? 'text-amber-600' : 'text-green-600';
+    return (
+      <Card padding="lg" className="mb-6">
+        <CardHeader title="Affected Scope" subtitle="System-wide impact assessment" />
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <p className="text-xs font-medium text-gray-500">Stale Subscriptions</p>
+            <p className="text-lg font-bold text-gray-900">{staleCount}</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <p className="text-xs font-medium text-gray-500">Total Monitored</p>
+            <p className="text-lg font-bold text-gray-900">{totalCount}</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <p className="text-xs font-medium text-gray-500">Stale Rate</p>
+            <p className={`text-lg font-bold ${rateColor}`}>{staleRate.toFixed(1)}%</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (issue.issueType === 'unusual_renewal_pattern') {
+    const currentRate = evidence.currentRate || evidence.current_rate || 0;
+    const baselineRate = evidence.baselineRate || evidence.baseline_rate || 0;
+    const drop = currentRate - baselineRate;
+    return (
+      <Card padding="lg" className="mb-6">
+        <CardHeader title="Affected Scope" subtitle="System-wide impact assessment" />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+            <p className="text-xs font-medium text-gray-500">Current Renewal Rate</p>
+            <p className="text-2xl font-bold text-red-600">{(currentRate * 100).toFixed(0)}%</p>
+            <p className="text-xs text-gray-400 mt-1">vs 30-day baseline</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+            <p className="text-xs font-medium text-gray-500">Baseline Renewal Rate</p>
+            <p className="text-2xl font-bold text-gray-900">{(baselineRate * 100).toFixed(0)}%</p>
+            <p className="text-xs text-gray-400 mt-1">30-day rolling average</p>
+          </div>
+        </div>
+        {drop !== 0 && (
+          <div className="mt-4 flex items-center gap-2 p-3 bg-red-50 rounded-lg border border-red-100">
+            <BarChart3 size={18} className="text-red-500" />
+            <span className="text-lg font-bold text-red-600">{(drop * 100).toFixed(0)}%</span>
+            <span className="text-sm text-red-600">renewal rate drop detected</span>
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // Generic aggregate fallback
+  const provider = evidence.provider || evidence.source || null;
+  return (
+    <Card padding="lg" className="mb-6">
+      <CardHeader title="Affected Scope" subtitle="System-wide impact assessment" />
+      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+        <BarChart3 size={18} className="text-gray-500" />
+        <div>
+          <p className="text-sm font-medium text-gray-900">Aggregate Issue</p>
+          <p className="text-xs text-gray-500">
+            {provider ? `Affecting ${provider} integration` : 'Affects system-wide metrics'}
+          </p>
+        </div>
+      </div>
+      {issue.estimatedRevenueCents != null && issue.estimatedRevenueCents > 0 && (
+        <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-100">
+          <p className="text-xs font-medium text-gray-500">Estimated Revenue Impact</p>
+          <p className="text-lg font-bold text-red-600">{formatCents(issue.estimatedRevenueCents)}</p>
+        </div>
+      )}
     </Card>
   );
 }

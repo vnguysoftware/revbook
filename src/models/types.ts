@@ -27,6 +27,8 @@ export type AlertConfiguration = InferSelectModel<typeof schema.alertConfigurati
 export type NewAlertConfiguration = InferInsertModel<typeof schema.alertConfigurations>;
 export type AlertDeliveryLog = InferSelectModel<typeof schema.alertDeliveryLogs>;
 export type NewAlertDeliveryLog = InferInsertModel<typeof schema.alertDeliveryLogs>;
+export type AccessCheck = InferSelectModel<typeof schema.accessChecks>;
+export type NewAccessCheck = InferInsertModel<typeof schema.accessChecks>;
 
 // ─── Domain types ───────────────────────────────────────────────────
 
@@ -113,6 +115,8 @@ export interface StateTransition {
   timestamp: Date;
 }
 
+export type DetectionTier = 'billing_only' | 'app_verified';
+
 /** Issue detection result */
 export interface DetectedIssue {
   issueType: string;
@@ -123,6 +127,7 @@ export interface DetectedIssue {
   estimatedRevenueCents?: number;
   confidence: number;
   evidence: Record<string, unknown>;
+  detectionTier?: DetectionTier;
 }
 
 // ─── Alert types ────────────────────────────────────────────────────

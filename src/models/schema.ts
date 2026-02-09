@@ -250,6 +250,7 @@ export const issues = pgTable('issues', {
   estimatedRevenueCents: integer('estimated_revenue_cents'),
   confidence: real('confidence'), // 0.0 - 1.0
   detectorId: varchar('detector_id', { length: 100 }).notNull(),
+  detectionTier: varchar('detection_tier', { length: 20 }).notNull().default('billing_only'),
   evidence: jsonb('evidence').default({}).notNull(), // relevant event IDs, state snapshots
   resolvedAt: timestamp('resolved_at'),
   resolvedBy: varchar('resolved_by', { length: 255 }),
@@ -318,4 +319,23 @@ export const webhookLogs = pgTable('webhook_logs', {
 }, (table) => [
   index('webhook_logs_org_source_idx').on(table.orgId, table.source),
   index('webhook_logs_created_idx').on(table.orgId, table.createdAt),
+]);
+
+// ─── Access Checks ───────────────────────────────────────────────────
+
+export const accessChecks = pgTable('access_checks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id),
+  userId: uuid('user_id').references(() => users.id),
+  productId: uuid('product_id').references(() => products.id),
+  externalUserId: varchar('external_user_id', { length: 512 }).notNull(),
+  hasAccess: boolean('has_access').notNull(),
+  reportedAt: timestamp('reported_at').notNull(),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('access_checks_org_idx').on(table.orgId),
+  index('access_checks_org_user_idx').on(table.orgId, table.userId),
+  index('access_checks_org_reported_idx').on(table.orgId, table.reportedAt),
+  index('access_checks_external_user_idx').on(table.orgId, table.externalUserId),
 ]);

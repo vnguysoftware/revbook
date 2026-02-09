@@ -5,16 +5,15 @@ import type { CanonicalEvent, DetectedIssue } from '../../models/types.js';
 import { entitlements, canonicalEvents } from '../../models/schema.js';
 
 /**
- * Detector: Access without Payment
+ * Detector: Expired Subscription Still Active
  *
- * Catches the reverse issue: a user has active access but no
- * recent successful payment. This means revenue leakage — the
- * company is giving away product for free.
+ * A subscription shows as active despite no recent successful payment.
+ * The renewal may have failed silently or a billing event was missed.
  */
 export const accessNoPaymentDetector: IssueDetector = {
-  id: 'access_no_payment',
-  name: 'Access without Payment',
-  description: 'User has active entitlement but no corresponding successful payment',
+  id: 'entitlement_without_payment',
+  name: 'Expired Subscription Still Active',
+  description: 'A subscription shows as active despite no recent successful payment. The renewal may have failed silently or a billing event was missed.',
 
   async checkEvent(db, orgId, userId, event) {
     // This is primarily a scheduled scan detector
@@ -41,10 +40,10 @@ export const accessNoPaymentDetector: IssueDetector = {
 
     // If entitlement is active but payment just failed, flag it
     return [{
-      issueType: 'access_no_payment',
+      issueType: 'entitlement_without_payment',
       severity: 'warning',
-      title: 'Active access with failed payment',
-      description: `Payment failed but user still has active access. If this persists, the user is getting free access.`,
+      title: 'Entitlement active despite failed payment',
+      description: `Payment failed but entitlement state is still "active". If no successful payment follows, this entitlement may be unbacked by revenue.`,
       userId,
       estimatedRevenueCents: event.amountCents || 0,
       confidence: 0.80,
@@ -83,10 +82,10 @@ export const accessNoPaymentDetector: IssueDetector = {
       if (hoursSinceExpiry < 2) continue;
 
       issues.push({
-        issueType: 'access_no_payment',
+        issueType: 'entitlement_without_payment',
         severity: hoursSinceExpiry > 24 ? 'critical' : 'warning',
-        title: `Active access ${Math.round(hoursSinceExpiry)}h past billing period`,
-        description: `User has active access but their billing period ended ${Math.round(hoursSinceExpiry)} hours ago with no renewal event.`,
+        title: `Entitlement active ${Math.round(hoursSinceExpiry)}h past billing period`,
+        description: `Entitlement is still "active" but the billing period ended ${Math.round(hoursSinceExpiry)} hours ago with no renewal event recorded.`,
         userId: ent.userId,
         confidence: hoursSinceExpiry > 24 ? 0.90 : 0.70,
         evidence: {

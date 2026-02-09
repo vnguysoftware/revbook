@@ -50,7 +50,7 @@ describe('Dashboard API', () => {
         if (queryNum === 3) {
           // By type
           return resolve([
-            { issueType: 'paid_no_access', totalRevenueCents: '3000', issueCount: 1 },
+            { issueType: 'payment_without_entitlement', totalRevenueCents: '3000', issueCount: 1 },
           ]);
         }
         if (queryNum === 4) {

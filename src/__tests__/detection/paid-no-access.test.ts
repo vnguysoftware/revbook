@@ -16,7 +16,7 @@ describe('PaidNoAccessDetector', () => {
 
   describe('metadata', () => {
     it('should have correct detector id', () => {
-      expect(paidNoAccessDetector.id).toBe('paid_no_access');
+      expect(paidNoAccessDetector.id).toBe('payment_without_entitlement');
     });
 
     it('should have a name and description', () => {
@@ -44,7 +44,7 @@ describe('PaidNoAccessDetector', () => {
       const issues = await paidNoAccessDetector.checkEvent(mockDb, orgId, userId, event);
 
       expect(issues).toHaveLength(1);
-      expect(issues[0].issueType).toBe('paid_no_access');
+      expect(issues[0].issueType).toBe('payment_without_entitlement');
       expect(issues[0].severity).toBe('critical');
       expect(issues[0].confidence).toBe(0.95);
       expect(issues[0].estimatedRevenueCents).toBe(1999);
@@ -68,7 +68,7 @@ describe('PaidNoAccessDetector', () => {
       const issues = await paidNoAccessDetector.checkEvent(mockDb, orgId, userId, event);
 
       expect(issues).toHaveLength(1);
-      expect(issues[0].issueType).toBe('paid_no_access');
+      expect(issues[0].issueType).toBe('payment_without_entitlement');
     });
 
     it('should detect issue when entitlement is revoked', async () => {

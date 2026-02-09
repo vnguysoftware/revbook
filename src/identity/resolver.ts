@@ -158,6 +158,57 @@ export class IdentityResolver {
   }
 
   /**
+   * Resolve a user by external ID — checks users.externalUserId,
+   * then userIdentities.externalId, then users.email.
+   * Returns the canonical user ID or null if not found.
+   */
+  async resolveByExternalId(orgId: string, externalId: string): Promise<string | null> {
+    // 1. Check users.externalUserId
+    const [byExternal] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.orgId, orgId),
+          eq(users.externalUserId, externalId),
+        ),
+      )
+      .limit(1);
+
+    if (byExternal) return byExternal.id;
+
+    // 2. Check userIdentities.externalId
+    const [byIdentity] = await this.db
+      .select({ userId: userIdentities.userId })
+      .from(userIdentities)
+      .where(
+        and(
+          eq(userIdentities.orgId, orgId),
+          eq(userIdentities.externalId, externalId),
+        ),
+      )
+      .limit(1);
+
+    if (byIdentity) return byIdentity.userId;
+
+    // 3. Check users.email
+    const [byEmail] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.orgId, orgId),
+          eq(users.email, externalId),
+        ),
+      )
+      .limit(1);
+
+    if (byEmail) return byEmail.id;
+
+    return null;
+  }
+
+  /**
    * Get all known identities for a user — used for the user timeline view.
    */
   async getUserIdentities(userId: string) {

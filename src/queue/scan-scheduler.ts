@@ -12,54 +12,64 @@ const log = createChildLogger('scan-scheduler');
  * all active organizations (orgId: 'all').
  */
 const SCAN_SCHEDULES = [
+  // Tier 1 — P0
   {
     name: 'webhook-gap-scan',
     detectorId: 'webhook_delivery_gap',
     // Every 15 minutes
     pattern: '*/15 * * * *',
-    description: 'Check for webhook delivery gaps',
+    description: 'Check for webhook delivery gaps across all billing sources',
   },
   {
-    name: 'silent-renewal-scan',
-    detectorId: 'silent_renewal_failure',
+    name: 'duplicate-billing-scan',
+    detectorId: 'duplicate_billing',
+    // Every 6 hours at :10
+    pattern: '10 */6 * * *',
+    description: 'Check for users billed on multiple platforms for same product',
+  },
+  {
+    name: 'unrevoked-refund-scan',
+    detectorId: 'unrevoked_refund',
     // Every hour at :05
     pattern: '5 * * * *',
-    description: 'Check for silent renewal failures',
+    description: 'Check for refunds/chargebacks without access revocation',
   },
+  // Tier 1 — P1
   {
-    name: 'access-no-payment-scan',
-    detectorId: 'access_no_payment',
-    // Every hour at :10
-    pattern: '10 * * * *',
-    description: 'Check for access without payment',
-  },
-  {
-    name: 'paid-no-access-scan',
-    detectorId: 'paid_no_access',
-    // Every 30 minutes
-    pattern: '*/30 * * * *',
-    description: 'Check for paid but no access',
-  },
-  {
-    name: 'cross-platform-mismatch-scan',
-    detectorId: 'cross_platform_mismatch',
+    name: 'cross-platform-conflict-scan',
+    detectorId: 'cross_platform_conflict',
     // Every 6 hours at :15
     pattern: '15 */6 * * *',
-    description: 'Check for cross-platform state mismatches',
+    description: 'Check for conflicting entitlement states across platforms',
   },
   {
-    name: 'trial-no-conversion-scan',
-    detectorId: 'trial_no_conversion',
-    // Daily at midnight
-    pattern: '0 0 * * *',
-    description: 'Check for trials without conversion',
+    name: 'renewal-anomaly-scan',
+    detectorId: 'renewal_anomaly',
+    // Every 6 hours at :20
+    pattern: '20 */6 * * *',
+    description: 'Check for unusual drops in renewal rates per billing source',
   },
   {
-    name: 'stale-subscription-scan',
-    detectorId: 'stale_subscription',
+    name: 'data-freshness-scan',
+    detectorId: 'data_freshness',
     // Daily at 2 AM
     pattern: '0 2 * * *',
-    description: 'Check for stale subscriptions with no recent events',
+    description: 'Check for billing sources with a high percentage of stale subscriptions',
+  },
+  // Tier 2 — App Verified
+  {
+    name: 'verified-paid-no-access-scan',
+    detectorId: 'verified_paid_no_access',
+    // Every hour at :30
+    pattern: '30 * * * *',
+    description: 'Check for paying customers without app access (Tier 2)',
+  },
+  {
+    name: 'verified-access-no-payment-scan',
+    detectorId: 'verified_access_no_payment',
+    // Every hour at :35
+    pattern: '35 * * * *',
+    description: 'Check for users with app access but no active subscription (Tier 2)',
   },
 ] as const;
 

@@ -246,6 +246,7 @@ async function seed() {
     await db.delete(schema.entitlements).where(eq(schema.entitlements.orgId, oldOrgId));
     await db.delete(schema.canonicalEvents).where(eq(schema.canonicalEvents.orgId, oldOrgId));
     await db.delete(schema.userIdentities).where(eq(schema.userIdentities.orgId, oldOrgId));
+    await db.delete(schema.accessChecks).where(eq(schema.accessChecks.orgId, oldOrgId));
     await db.delete(schema.users).where(eq(schema.users.orgId, oldOrgId));
     await db.delete(schema.products).where(eq(schema.products.orgId, oldOrgId));
     await db.delete(schema.billingConnections).where(eq(schema.billingConnections.orgId, oldOrgId));
@@ -687,11 +688,12 @@ async function seed() {
   const usedIssueUserIds = new Set<string>();
 
   // --- Revenue impact budget ---
-  // Target: ~$23,400/month = 2,340,000 cents/month
-  // We'll distribute across issue types to hit the target
+  // Per-user issues use the subscription's monthly price (annual / 12 for annual plans)
+  // Aggregate issues (webhook gap) use a total estimated impact of $1,000-$3,000
+  // Target total across all ~36 issues: $2,000-$8,000
 
-  // 8a. paid_no_access: 8 issues, P0 critical
-  // These users paid but their entitlement shows inactive/expired
+  // 8a. payment_without_entitlement: 8 issues, P0 critical
+  // Payment succeeded but entitlement state didn't transition to active
   const paidNoAccessUsers = pickUsers(
     (u) => u.stripeCustomerId !== null,
     8,
@@ -700,25 +702,23 @@ async function seed() {
   for (const user of paidNoAccessUsers) {
     const sub = userSubMap.get(user.id)!;
     const product = sub.product;
-    // Revenue impact: full subscription price per month
-    const monthlyImpact = product.periodMonths === 12
+    // Revenue impact: full subscription price per month (realistic consumer pricing)
+    const impactCents = product.periodMonths === 12
       ? Math.round(product.amountCents / 12)
       : product.amountCents;
-    // Use higher-value products to reach target: ~$50-200/mo per user
-    const impactCents = randomInt(5000, 20000);
 
     issueRows.push({
       id: uuid(),
       orgId: ORG_ID,
       userId: user.id,
-      issueType: 'paid_no_access',
+      issueType: 'payment_without_entitlement',
       severity: 'critical',
       status: 'open',
-      title: `User ${user.firstName} ${user.lastName} paid but has no access`,
-      description: `User paid $${(impactCents / 100).toFixed(2)}/mo for ${product.name} via ${sub.source} but their entitlement state is inactive. Last payment was ${randomInt(1, 5)} days ago. This is likely a webhook processing failure or state machine bug.`,
+      title: `Payment succeeded but entitlement is inactive for ${user.firstName} ${user.lastName}`,
+      description: `Payment of $${(impactCents / 100).toFixed(2)}/mo for ${product.name} via ${sub.source} succeeded but entitlement state is "inactive". Last payment was ${randomInt(1, 5)} days ago. This is likely a webhook processing failure or state machine bug.`,
       estimatedRevenueCents: impactCents,
       confidence: +(0.9 + Math.random() * 0.1).toFixed(2),
-      detectorId: 'paid_no_access',
+      detectorId: 'payment_without_entitlement',
       evidence: {
         userId: user.id,
         subscriptionId: sub.subId,
@@ -726,15 +726,15 @@ async function seed() {
         source: sub.source,
         lastPaymentAmount: impactCents,
         lastPaymentDate: daysAgo(randomInt(1, 5)).toISOString(),
-        currentEntitlementState: 'inactive',
-        expectedEntitlementState: 'active',
+        entitlementState: 'inactive',
+        expectedState: 'active',
       },
       createdAt: daysAgo(randomInt(0, 7)),
       updatedAt: daysAgo(randomInt(0, 2)),
     });
   }
 
-  // 8b. refund_still_active: 4 issues, P0 critical
+  // 8b. refund_not_revoked: 4 issues, P0 critical
   const refundActiveUsers = pickUsers(
     (u) => u.stripeCustomerId !== null,
     4,
@@ -743,20 +743,23 @@ async function seed() {
   for (const user of refundActiveUsers) {
     const sub = userSubMap.get(user.id)!;
     const product = sub.product;
-    const impactCents = randomInt(1000, 16000);
+    // Revenue impact: match the subscription price (realistic refund amount)
+    const impactCents = product.periodMonths === 12
+      ? Math.round(product.amountCents / 12)
+      : product.amountCents;
 
     issueRows.push({
       id: uuid(),
       orgId: ORG_ID,
       userId: user.id,
-      issueType: 'refund_still_active',
+      issueType: 'refund_not_revoked',
       severity: 'critical',
       status: 'open',
-      title: `Refunded user ${user.firstName} ${user.lastName} still has active access`,
-      description: `User received a refund of $${(impactCents / 100).toFixed(2)} for ${product.name} but their entitlement is still active. Access should have been revoked when the refund was processed.`,
+      title: `Refund recorded but entitlement not revoked for ${user.firstName} ${user.lastName}`,
+      description: `Refund of $${(impactCents / 100).toFixed(2)} for ${product.name} was recorded but entitlement state is still "active". Expected transition to "refunded" did not occur.`,
       estimatedRevenueCents: impactCents,
       confidence: +(0.92 + Math.random() * 0.08).toFixed(2),
-      detectorId: 'refund_still_active',
+      detectorId: 'refund_not_revoked',
       evidence: {
         userId: user.id,
         subscriptionId: sub.subId,
@@ -764,15 +767,15 @@ async function seed() {
         source: sub.source,
         refundAmount: impactCents,
         refundDate: daysAgo(randomInt(2, 14)).toISOString(),
-        currentEntitlementState: 'active',
-        expectedEntitlementState: 'refunded',
+        entitlementState: 'active',
+        expectedState: 'refunded',
       },
       createdAt: daysAgo(randomInt(1, 10)),
       updatedAt: daysAgo(randomInt(0, 3)),
     });
   }
 
-  // 8c. access_no_payment: 3 issues, P0 warning
+  // 8c. entitlement_without_payment: 3 issues, P0 warning
   const freeRiderUsers = pickUsers(
     (u) => u.stripeCustomerId !== null || u.appleTransactionId !== null,
     3,
@@ -789,21 +792,21 @@ async function seed() {
       id: uuid(),
       orgId: ORG_ID,
       userId: user.id,
-      issueType: 'access_no_payment',
+      issueType: 'entitlement_without_payment',
       severity: 'warning',
       status: 'open',
-      title: `User ${user.firstName} ${user.lastName} has access without payment`,
-      description: `User has active entitlement for ${product.name} but no successful payment events found in the last ${product.periodMonths === 12 ? '12' : '1'} month(s). They may be a free rider due to a billing system inconsistency.`,
+      title: `Entitlement active without payment for ${user.firstName} ${user.lastName}`,
+      description: `Entitlement for ${product.name} is "active" but no successful payment events recorded in the last ${product.periodMonths === 12 ? '12' : '1'} month(s). This may indicate a missed renewal webhook or billing gap.`,
       estimatedRevenueCents: impactCents,
       confidence: +(0.75 + Math.random() * 0.15).toFixed(2),
-      detectorId: 'access_no_payment',
+      detectorId: 'entitlement_without_payment',
       evidence: {
         userId: user.id,
         subscriptionId: sub.subId,
         productId: product.id,
         source: sub.source,
         expectedPaymentAmount: impactCents,
-        currentEntitlementState: 'active',
+        entitlementState: 'active',
         lastPaymentDate: daysAgo(randomInt(35, 90)).toISOString(),
         monthsWithoutPayment: randomInt(2, 4),
       },
@@ -822,7 +825,7 @@ async function seed() {
     status: 'open',
     title: 'Apple App Store webhook delivery gap detected',
     description: 'No Apple App Store webhooks received in the last 2+ hours. Normal webhook frequency is every 5-15 minutes. This could indicate a webhook configuration issue or Apple server-side notification failure. Events may be accumulating unprocessed.',
-    estimatedRevenueCents: 450000, // $4,500 at risk during gap
+    estimatedRevenueCents: randomInt(120000, 250000), // $1,200-$2,500 at risk during gap
     confidence: 0.88,
     detectorId: 'webhook_delivery_gap',
     evidence: {
@@ -954,51 +957,81 @@ async function seed() {
     });
   }
 
-  // ---- Adjust revenue to hit ~$23,400/mo target ----
-  // Calculate current total
-  let totalRevenueCents = issueRows.reduce(
+  // Calculate total for summary
+  const totalRevenueCents = issueRows.reduce(
     (sum, issue) => sum + ((issue.estimatedRevenueCents as number) || 0),
     0,
   );
-  const TARGET_CENTS = 2340000; // $23,400
 
-  // If we're short, scale up the paid_no_access issues (they're the "big" ones)
-  if (totalRevenueCents < TARGET_CENTS) {
-    const deficit = TARGET_CENTS - totalRevenueCents;
-    // Spread the deficit across the critical issues (first 12: paid_no_access + refund_still_active)
-    const criticalIssues = issueRows.filter(
-      (i) => i.issueType === 'paid_no_access' || i.issueType === 'refund_still_active',
-    );
-    const perIssueAdd = Math.round(deficit / criticalIssues.length);
-    for (const issue of criticalIssues) {
-      (issue.estimatedRevenueCents as number) += perIssueAdd;
-      // Update description to reflect new amount
-      const cents = issue.estimatedRevenueCents as number;
-      if (issue.issueType === 'paid_no_access') {
-        issue.description = `User paid $${(cents / 100).toFixed(2)}/mo but their entitlement state is inactive. Last payment was recently. This is likely a webhook processing failure or state machine bug causing revenue leakage.`;
-      } else {
-        issue.description = `User received a refund of $${(cents / 100).toFixed(2)} but their entitlement is still active. Access should have been revoked when the refund was processed, resulting in continued free access.`;
-      }
-      // Update evidence
-      if (issue.evidence && typeof issue.evidence === 'object') {
-        (issue.evidence as Record<string, unknown>).adjustedImpact = cents;
-      }
-    }
-  } else if (totalRevenueCents > TARGET_CENTS * 1.1) {
-    // Scale down proportionally if too high
-    const scale = TARGET_CENTS / totalRevenueCents;
-    for (const issue of issueRows) {
-      if (issue.estimatedRevenueCents) {
-        issue.estimatedRevenueCents = Math.round((issue.estimatedRevenueCents as number) * scale);
-      }
-    }
+  // Add detectionTier to all billing-only issues
+  for (const issue of issueRows) {
+    (issue as any).detectionTier = 'billing_only';
   }
 
-  // Final total verification
-  totalRevenueCents = issueRows.reduce(
-    (sum, issue) => sum + ((issue.estimatedRevenueCents as number) || 0),
-    0,
+  // Add Tier 2 (app_verified) issues
+  const tier2Users = pickUsers(
+    (u) => u.stripeCustomerId !== null,
+    3,
+    usedIssueUserIds,
   );
+
+  if (tier2Users.length >= 2) {
+    const vpnaUser = tier2Users[0];
+    const vpnaSub = userSubMap.get(vpnaUser.id)!;
+    const vpnaImpactCents = vpnaSub.product.periodMonths === 12
+      ? Math.round(vpnaSub.product.amountCents / 12)
+      : vpnaSub.product.amountCents;
+    issueRows.push({
+      id: uuid(),
+      orgId: ORG_ID,
+      userId: vpnaUser.id,
+      issueType: 'verified_paid_no_access',
+      severity: 'critical',
+      status: 'open',
+      title: `Paying customer confirmed without access: ${vpnaUser.firstName} ${vpnaUser.lastName}`,
+      description: `User has an active entitlement for ${vpnaSub.product.name} but your app reported hasAccess=false. This customer is paying but cannot use the product.`,
+      estimatedRevenueCents: vpnaImpactCents,
+      confidence: 0.95,
+      detectorId: 'verified_paid_no_access',
+      detectionTier: 'app_verified',
+      evidence: {
+        userId: vpnaUser.id,
+        entitlementState: 'active',
+        hasAccess: false,
+        verifiedAt: hoursAgo(1).toISOString(),
+      },
+      createdAt: hoursAgo(2),
+      updatedAt: hoursAgo(1),
+    } as any);
+
+    const vanpUser = tier2Users[1];
+    const vanpSub = userSubMap.get(vanpUser.id)!;
+    const vanpImpactCents = vanpSub.product.periodMonths === 12
+      ? Math.round(vanpSub.product.amountCents / 12)
+      : vanpSub.product.amountCents;
+    issueRows.push({
+      id: uuid(),
+      orgId: ORG_ID,
+      userId: vanpUser.id,
+      issueType: 'verified_access_no_payment',
+      severity: 'critical',
+      status: 'open',
+      title: `User has access without active subscription: ${vanpUser.firstName} ${vanpUser.lastName}`,
+      description: `Your app reported hasAccess=true for this user, but their subscription for ${vanpSub.product.name} is expired. They may be accessing the product without paying.`,
+      estimatedRevenueCents: vanpImpactCents,
+      confidence: 0.95,
+      detectorId: 'verified_access_no_payment',
+      detectionTier: 'app_verified',
+      evidence: {
+        userId: vanpUser.id,
+        entitlementStates: ['expired'],
+        hasAccess: true,
+        verifiedAt: hoursAgo(1).toISOString(),
+      },
+      createdAt: hoursAgo(3),
+      updatedAt: hoursAgo(1),
+    } as any);
+  }
 
   await db.insert(schema.issues).values(issueRows as any);
   console.log(`  Created ${issueRows.length} issues`);
@@ -1081,6 +1114,35 @@ async function seed() {
   await db.insert(schema.webhookLogs).values(webhookRows as any);
   console.log(`  Created ${WEBHOOK_COUNT} webhook logs`);
 
+  // ── 10. Access Checks ─────────────────────────────────────────────
+  console.log('[10/10] Creating access checks...');
+
+  const accessCheckRows: Array<Record<string, unknown>> = [];
+  const ACCESS_CHECK_COUNT = 30;
+
+  // Generate access checks for some users
+  const accessCheckUsers = userRows.slice(0, ACCESS_CHECK_COUNT);
+  for (let i = 0; i < accessCheckUsers.length; i++) {
+    const user = accessCheckUsers[i];
+    const sub = userSubMap.get(user.id);
+    const product = sub?.product;
+
+    accessCheckRows.push({
+      id: uuid(),
+      orgId: ORG_ID,
+      userId: user.id,
+      productId: product?.id || null,
+      externalUserId: user.stripeCustomerId || user.email,
+      hasAccess: i < ACCESS_CHECK_COUNT - 3, // Last 3 users report no access
+      reportedAt: randomDateBetween(hoursAgo(24), minutesAgo(10)),
+      metadata: {},
+      createdAt: new Date(),
+    });
+  }
+
+  await db.insert(schema.accessChecks).values(accessCheckRows as any);
+  console.log(`  Created ${ACCESS_CHECK_COUNT} access checks`);
+
   // ── Summary ────────────────────────────────────────────────────────
   console.log('\n=== Seed Complete ===');
   console.log(`Organization:       Acme Fitness (${ORG_ID})`);
@@ -1092,13 +1154,16 @@ async function seed() {
   console.log(`Events:             ${EVENT_COUNT}`);
   console.log(`Entitlements:       ${entitlementRows.length}`);
   console.log(`Issues:             ${issueRows.length}`);
-  console.log(`  - paid_no_access:         ${issueRows.filter((i) => i.issueType === 'paid_no_access').length}`);
-  console.log(`  - refund_still_active:    ${issueRows.filter((i) => i.issueType === 'refund_still_active').length}`);
-  console.log(`  - access_no_payment:      ${issueRows.filter((i) => i.issueType === 'access_no_payment').length}`);
+  console.log(`  - payment_without_entitlement: ${issueRows.filter((i) => i.issueType === 'payment_without_entitlement').length}`);
+  console.log(`  - refund_not_revoked:          ${issueRows.filter((i) => i.issueType === 'refund_not_revoked').length}`);
+  console.log(`  - entitlement_without_payment: ${issueRows.filter((i) => i.issueType === 'entitlement_without_payment').length}`);
   console.log(`  - webhook_delivery_gap:   ${issueRows.filter((i) => i.issueType === 'webhook_delivery_gap').length}`);
   console.log(`  - cross_platform_mismatch: ${issueRows.filter((i) => i.issueType === 'cross_platform_mismatch').length}`);
   console.log(`  - silent_renewal_failure: ${issueRows.filter((i) => i.issueType === 'silent_renewal_failure').length}`);
   console.log(`  - trial_no_conversion:    ${issueRows.filter((i) => i.issueType === 'trial_no_conversion').length}`);
+  console.log(`  - verified_paid_no_access: ${issueRows.filter((i) => i.issueType === 'verified_paid_no_access').length}`);
+  console.log(`  - verified_access_no_payment: ${issueRows.filter((i) => i.issueType === 'verified_access_no_payment').length}`);
+  console.log(`Access Checks:      ${ACCESS_CHECK_COUNT}`);
   console.log(`Webhook Logs:       ${WEBHOOK_COUNT}`);
   console.log(`Revenue at Risk:    $${(totalRevenueCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}/mo`);
   console.log('\nReady for demo!');

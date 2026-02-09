@@ -110,7 +110,7 @@ describe('Issues API', () => {
         return resolve([]);
       });
 
-      const res = await app.request('/issues?type=paid_no_access');
+      const res = await app.request('/issues?type=payment_without_entitlement');
       expect(res.status).toBe(200);
     });
   });
@@ -127,8 +127,8 @@ describe('Issues API', () => {
         }
         // byType query
         return resolve([
-          { issueType: 'paid_no_access', count: 3, revenue: 5999 },
-          { issueType: 'refund_still_active', count: 2, revenue: 4000 },
+          { issueType: 'payment_without_entitlement', count: 3, revenue: 5999 },
+          { issueType: 'refund_not_revoked', count: 2, revenue: 4000 },
         ]);
       });
 

@@ -3,14 +3,14 @@ import type { Database } from '../config/database.js';
 import { issues } from '../models/schema.js';
 import type { CanonicalEvent, DetectedIssue, Issue } from '../models/types.js';
 import type { IssueDetector } from './detector.js';
-import { paidNoAccessDetector } from './detectors/paid-no-access.js';
-import { accessNoPaymentDetector } from './detectors/access-no-payment.js';
-import { crossPlatformMismatchDetector } from './detectors/cross-platform-mismatch.js';
-import { refundStillActiveDetector } from './detectors/refund-still-active.js';
-import { silentRenewalFailureDetector } from './detectors/silent-renewal-failure.js';
-import { trialNoConversionDetector } from './detectors/trial-no-conversion.js';
 import { webhookGapDetector } from './detectors/webhook-gap.js';
-import { staleSubscriptionDetector } from './detectors/stale-subscription.js';
+import { duplicateBillingDetector } from './detectors/duplicate-billing.js';
+import { refundStillActiveDetector } from './detectors/refund-still-active.js';
+import { crossPlatformConflictDetector } from './detectors/cross-platform-conflict.js';
+import { renewalAnomalyDetector } from './detectors/renewal-anomaly.js';
+import { dataFreshnessDetector } from './detectors/data-freshness.js';
+import { verifiedPaidNoAccessDetector } from './detectors/verified-paid-no-access.js';
+import { verifiedAccessNoPaymentDetector } from './detectors/verified-access-no-payment.js';
 import { dispatchAlert } from '../alerts/dispatcher.js';
 import { notifyCxChannel } from '../slack/notifications.js';
 import { createChildLogger } from '../config/logger.js';
@@ -22,23 +22,36 @@ const log = createChildLogger('issue-detection');
  *
  * Orchestrates all issue detectors and manages the lifecycle
  * of detected issues: creation, deduplication, and auto-resolution.
+ *
+ * Registry: 8 detectors total
+ *   Tier 1 (Billing Only):
+ *     P0: webhook_delivery_gap, duplicate_billing, unrevoked_refund
+ *     P1: cross_platform_conflict, renewal_anomaly, data_freshness
+ *   Tier 2 (App Verified):
+ *     P0: verified_paid_no_access, verified_access_no_payment
+ *
+ * Demoted to internal (files kept for reference, not registered):
+ *   payment_without_entitlement, entitlement_without_payment
+ *
+ * Removed (moved to analytics):
+ *   trial_no_conversion, silent_renewal_failure, stale_subscription
  */
 export class IssueDetectionEngine {
   private detectors: IssueDetector[];
 
   constructor(private db: Database) {
     this.detectors = [
-      // P0: Ship day 1
-      paidNoAccessDetector,
-      accessNoPaymentDetector,
-      refundStillActiveDetector,
+      // Tier 1 — P0: Ship day 1
       webhookGapDetector,
-      // P1: Ship within 2 weeks
-      crossPlatformMismatchDetector,
-      silentRenewalFailureDetector,
-      // P2: Iterate based on customer feedback
-      trialNoConversionDetector,
-      staleSubscriptionDetector,
+      duplicateBillingDetector,
+      refundStillActiveDetector,
+      // Tier 1 — P1: Cross-platform and aggregate anomalies
+      crossPlatformConflictDetector,
+      renewalAnomalyDetector,
+      dataFreshnessDetector,
+      // Tier 2: App-verified (requires access-check integration)
+      verifiedPaidNoAccessDetector,
+      verifiedAccessNoPaymentDetector,
     ];
   }
 
@@ -138,6 +151,7 @@ export class IssueDetectionEngine {
         estimatedRevenueCents: detected.estimatedRevenueCents,
         confidence: detected.confidence,
         detectorId,
+        detectionTier: detected.detectionTier || 'billing_only',
         evidence: detected.evidence,
       }).returning();
 

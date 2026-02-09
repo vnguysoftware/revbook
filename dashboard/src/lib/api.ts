@@ -1,5 +1,7 @@
 const API_BASE = '/api/v1';
 
+export const DEMO_API_KEY = 'rev_live_acme_prod_key_demo_2024';
+
 let apiKey = localStorage.getItem('revback_api_key') || '';
 
 export function setApiKey(key: string) {
@@ -9,6 +11,10 @@ export function setApiKey(key: string) {
 
 export function getApiKey(): string {
   return apiKey;
+}
+
+export function isAuthenticated(): boolean {
+  return !!apiKey;
 }
 
 export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {

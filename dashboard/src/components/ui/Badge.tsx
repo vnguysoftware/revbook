@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 
 interface BadgeProps {
-  variant?: 'critical' | 'warning' | 'info' | 'success' | 'neutral' | 'open' | 'acknowledged' | 'resolved' | 'dismissed';
+  variant?: 'critical' | 'warning' | 'info' | 'success' | 'neutral' | 'open' | 'acknowledged' | 'resolved' | 'dismissed' | 'slate' | 'violet' | 'amber' | 'emerald';
   size?: 'sm' | 'md';
   dot?: boolean;
   children: React.ReactNode;
@@ -18,6 +18,11 @@ const variantStyles: Record<string, string> = {
   acknowledged: 'bg-amber-50 text-amber-700 border-amber-200',
   resolved: 'bg-green-50 text-green-700 border-green-200',
   dismissed: 'bg-gray-100 text-gray-500 border-gray-200',
+  // Category color variants
+  slate: 'bg-slate-50 text-slate-700 border-slate-200',
+  violet: 'bg-violet-50 text-violet-700 border-violet-200',
+  amber: 'bg-amber-50 text-amber-700 border-amber-200',
+  emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
 const dotStyles: Record<string, string> = {
@@ -30,6 +35,11 @@ const dotStyles: Record<string, string> = {
   acknowledged: 'bg-amber-500',
   resolved: 'bg-green-500',
   dismissed: 'bg-gray-400',
+  // Category color variants
+  slate: 'bg-slate-500',
+  violet: 'bg-violet-500',
+  amber: 'bg-amber-500',
+  emerald: 'bg-emerald-500',
 };
 
 export function Badge({ variant = 'neutral', size = 'sm', dot, children, className }: BadgeProps) {
