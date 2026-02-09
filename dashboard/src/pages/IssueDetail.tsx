@@ -424,10 +424,9 @@ function AiInvestigationSection({ issueId }: { issueId: string }): React.ReactEl
               AI-powered investigation can analyze this issue, determine the root cause,
               assess impact, and recommend actions.
             </p>
-            <div className="flex items-center gap-2 text-xs text-gray-400 bg-white rounded-lg border border-gray-200 px-4 py-2.5">
-              <AlertTriangle size={14} className="text-amber-500" />
-              <span>Set <code className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">ANTHROPIC_API_KEY</code> to enable</span>
-            </div>
+            <p className="text-xs text-gray-400">
+              AI-powered root cause analysis will be available here once enabled for your account.
+            </p>
           </div>
         </div>
       ) : data?.status === 'processing' ? (

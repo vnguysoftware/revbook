@@ -14,7 +14,7 @@ import { createChildLogger } from '../config/logger.js';
 const log = createChildLogger('api-ai');
 
 const AI_UNAVAILABLE_MSG =
-  'AI investigation not available — configure ANTHROPIC_API_KEY to enable';
+  'AI investigation is not currently enabled for this account';
 
 /**
  * AI-powered API routes.

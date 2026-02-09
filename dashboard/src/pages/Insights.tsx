@@ -174,12 +174,9 @@ export function InsightsPage() {
                 Get deeper insights with AI analysis including churn prediction, anomaly detection,
                 and personalized recommendations to optimize your subscription revenue.
               </p>
-              <div className="mt-3 flex items-center gap-2 text-xs text-gray-400 bg-white/5 rounded-lg border border-white/10 px-3 py-2 inline-flex">
-                <AlertTriangle size={13} className="text-amber-400" />
-                <span>
-                  Set <code className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">ANTHROPIC_API_KEY</code> to enable
-                </span>
-              </div>
+              <p className="mt-3 text-xs text-gray-400">
+                AI-powered analysis will be available once enabled for your account.
+              </p>
             </div>
           </div>
         </div>
