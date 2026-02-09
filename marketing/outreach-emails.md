@@ -30,7 +30,7 @@ We're running free billing audits. Read-only connection to your Stripe/Apple acc
 
 Hi [NAME],
 
-If [COMPANY] runs subscriptions on Stripe and Apple IAP, you've lived this: 15 separate "paid-no-access" alerts fire over 2 hours. Your team triages each one individually. Three hours later, someone realizes they're all caused by the same Apple webhook outage.
+If [COMPANY] runs subscriptions on Stripe and Apple IAP, you've lived this: 15 separate "payment-without-entitlement" alerts fire over 2 hours. Your team triages each one individually. Three hours later, someone realizes they're all caused by the same Apple webhook outage.
 
 RevBack's AI clusters related issues into a single incident automatically. The first alert triggers an AI investigation that identifies the root cause. When the next 14 arrive, they're grouped under one incident -- "Apple Webhook Outage" -- with a single root cause analysis and fix recommendation.
 
