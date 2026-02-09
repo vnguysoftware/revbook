@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.png
+*.jpg
+*.jpeg
+.env
+.env.local
+.DS_Store
+.playwright-mcp/
