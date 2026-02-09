@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import useSWR from 'swr';
 import { fetcher } from '../lib/api';
@@ -15,6 +15,7 @@ import {
   Shield,
   RefreshCw,
   ExternalLink,
+  Calendar,
 } from 'lucide-react';
 
 interface Event {
@@ -43,12 +44,31 @@ const sourceLabels: Record<string, string> = {
   google: 'Google Play',
 };
 
+const DATE_PRESETS = [
+  { value: '', label: 'All Time' },
+  { value: '1', label: 'Last 24h' },
+  { value: '7', label: 'Last 7 days' },
+  { value: '30', label: 'Last 30 days' },
+];
+
 export function EventsPage() {
   useEffect(() => { document.title = 'Events - RevBack'; }, []);
 
   const [source, setSource] = useState('');
+  const [dateRange, setDateRange] = useState('');
+
+  // Stable SWR key: round startDate to the start of day so it doesn't change on every render
+  const startDateParam = useMemo(() => {
+    if (!dateRange) return '';
+    const start = new Date();
+    start.setDate(start.getDate() - parseInt(dateRange));
+    start.setHours(0, 0, 0, 0);
+    return start.toISOString();
+  }, [dateRange]);
+
   const params = new URLSearchParams({ limit: '100' });
   if (source) params.set('source', source);
+  if (startDateParam) params.set('startDate', startDateParam);
 
   const { data, isLoading, error, mutate } = useSWR<{ events: Event[] }>(
     `/dashboard/events?${params}`,
@@ -94,9 +114,23 @@ export function EventsPage() {
           </button>
         ))}
 
+        <div className="w-px h-5 bg-gray-200 mx-1" />
+        <div className="relative">
+          <Calendar size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="appearance-none pl-7 pr-7 py-2 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-300 cursor-pointer transition-all"
+          >
+            {DATE_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </select>
+        </div>
+
         {data?.events && (
           <span className="ml-auto text-xs text-gray-400">
-            {data.events.length} events loaded
+            {data.events.length} events{dateRange ? ` in last ${dateRange}d` : ' loaded'}
           </span>
         )}
       </div>

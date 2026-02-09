@@ -91,6 +91,8 @@ export function createDashboardRoutes(db: Database) {
     const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200);
     const source = c.req.query('source');
     const eventType = c.req.query('type');
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
 
     const events = await db
       .select({
@@ -112,6 +114,8 @@ export function createDashboardRoutes(db: Database) {
           eq(canonicalEvents.orgId, orgId),
           source ? eq(canonicalEvents.source, source as any) : undefined,
           eventType ? eq(canonicalEvents.eventType, eventType as any) : undefined,
+          startDate ? gte(canonicalEvents.eventTime, new Date(startDate)) : undefined,
+          endDate ? sql`${canonicalEvents.eventTime} <= ${new Date(endDate)}` : undefined,
         ),
       )
       .orderBy(desc(canonicalEvents.eventTime))
