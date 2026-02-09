@@ -230,6 +230,7 @@ function createIdentityMockDb() {
     where: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnThis(),
+    orderBy: vi.fn().mockReturnThis(),
     limit: vi.fn().mockImplementation(() => Promise.resolve(selectResult)),
     returning: vi.fn().mockImplementation(() => Promise.resolve(insertResult)),
     onConflictDoNothing: vi.fn().mockImplementation(() => Promise.resolve([])),

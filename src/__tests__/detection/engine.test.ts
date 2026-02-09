@@ -18,6 +18,11 @@ vi.mock('../../alerts/dispatcher.js', () => ({
   dispatchAlert: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock CX notifications
+vi.mock('../../slack/notifications.js', () => ({
+  notifyCxChannel: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock all individual detectors to control their behavior in tests
 vi.mock('../../detection/detectors/paid-no-access.js', () => ({
   paidNoAccessDetector: {
@@ -87,6 +92,16 @@ vi.mock('../../detection/detectors/trial-no-conversion.js', () => ({
   },
 }));
 
+vi.mock('../../detection/detectors/stale-subscription.js', () => ({
+  staleSubscriptionDetector: {
+    id: 'stale_subscription',
+    name: 'Stale Subscription',
+    description: 'Test',
+    checkEvent: vi.fn().mockResolvedValue([]),
+    scheduledScan: vi.fn().mockResolvedValue([]),
+  },
+}));
+
 describe('IssueDetectionEngine', () => {
   const orgId = 'org_engine_test';
   const userId = 'user_engine_001';
@@ -100,9 +115,9 @@ describe('IssueDetectionEngine', () => {
   });
 
   describe('getDetectors', () => {
-    it('should return all 7 registered detectors', () => {
+    it('should return all 8 registered detectors', () => {
       const detectors = engine.getDetectors();
-      expect(detectors).toHaveLength(7);
+      expect(detectors).toHaveLength(8);
     });
 
     it('should include detector metadata', () => {
@@ -116,6 +131,7 @@ describe('IssueDetectionEngine', () => {
       expect(ids).toContain('cross_platform_mismatch');
       expect(ids).toContain('silent_renewal_failure');
       expect(ids).toContain('trial_no_conversion');
+      expect(ids).toContain('stale_subscription');
     });
 
     it('should indicate which detectors have scheduled scans', () => {

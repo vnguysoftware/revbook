@@ -57,12 +57,22 @@ describe('EntitlementEngine', () => {
         status: 'success',
       }) as CanonicalEvent;
 
-      // No existing entitlement
-      mockDb._configureSelectResult([]);
-      // Newly created entitlement
-      mockDb._configureInsertResult([
-        createTestEntitlement(orgId, userId, productId, { state: 'inactive', stateHistory: [] }),
-      ]);
+      const newEnt = createTestEntitlement(orgId, userId, productId, { state: 'inactive', stateHistory: [] });
+
+      // The engine does:
+      // 1. insert().values().onConflictDoNothing() — creates the entitlement
+      // 2. select().from().where().limit(1) — reads it back
+      // After insert, the select should return the newly created entitlement
+      let insertDone = false;
+      mockDb.onConflictDoNothing = vi.fn().mockImplementation(() => {
+        insertDone = true;
+        return Promise.resolve([]);
+      });
+      mockDb.limit = vi.fn().mockImplementation(() => {
+        // After insert, return the new entitlement
+        if (insertDone) return Promise.resolve([newEnt]);
+        return Promise.resolve([]);
+      });
 
       const transition = await engine.processEvent(event);
 
@@ -529,17 +539,33 @@ describe('EntitlementEngine', () => {
 function createEntitlementMockDb() {
   let selectResult: any[] = [];
   let insertResult: any[] = [];
+  // returning() for update operations should return a non-empty array by default
+  // (the engine checks updated.length === 0 for optimistic lock detection)
+  let updateReturningResult: any[] = [{ id: 'updated' }];
+  let lastOp: 'select' | 'insert' | 'update' = 'select';
 
   const chainable: any = {
-    select: vi.fn().mockReturnThis(),
-    insert: vi.fn().mockReturnThis(),
-    update: vi.fn().mockReturnThis(),
+    select: vi.fn().mockImplementation(function (this: any) {
+      lastOp = 'select';
+      return this;
+    }),
+    insert: vi.fn().mockImplementation(function (this: any) {
+      lastOp = 'insert';
+      return this;
+    }),
+    update: vi.fn().mockImplementation(function (this: any) {
+      lastOp = 'update';
+      return this;
+    }),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnThis(),
     limit: vi.fn().mockImplementation(() => Promise.resolve(selectResult)),
-    returning: vi.fn().mockImplementation(() => Promise.resolve(insertResult)),
+    returning: vi.fn().mockImplementation(function () {
+      if (lastOp === 'update') return Promise.resolve(updateReturningResult);
+      return Promise.resolve(insertResult);
+    }),
     onConflictDoNothing: vi.fn().mockImplementation(() => Promise.resolve([])),
     catch: vi.fn().mockReturnThis(),
 

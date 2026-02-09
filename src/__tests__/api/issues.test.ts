@@ -38,7 +38,13 @@ describe('Issues API', () => {
         createTestIssue(orgId, { id: 'issue-1', title: 'Issue 1' }),
         createTestIssue(orgId, { id: 'issue-2', title: 'Issue 2' }),
       ];
-      mockDb._configureQueryResult(testIssues);
+      // GET /issues does: 1) count query, 2) results query
+      let callCount = 0;
+      mockDb.then = vi.fn().mockImplementation((resolve: any) => {
+        callCount++;
+        if (callCount === 1) return resolve([{ count: 2 }]); // count query
+        return resolve(testIssues); // results query
+      });
 
       const res = await app.request('/issues');
       expect(res.status).toBe(200);
@@ -48,37 +54,61 @@ describe('Issues API', () => {
     });
 
     it('should respect limit parameter', async () => {
-      mockDb._configureQueryResult([]);
+      // GET /issues does: 1) count query, 2) results query
+      let callCount = 0;
+      mockDb.then = vi.fn().mockImplementation((resolve: any) => {
+        callCount++;
+        if (callCount === 1) return resolve([{ count: 0 }]); // count query
+        return resolve([]); // results query
+      });
 
       const res = await app.request('/issues?limit=10');
       expect(res.status).toBe(200);
-      // Verify the query was executed (limit is applied in DB query)
     });
 
     it('should cap limit at 100', async () => {
-      mockDb._configureQueryResult([]);
+      let callCount = 0;
+      mockDb.then = vi.fn().mockImplementation((resolve: any) => {
+        callCount++;
+        if (callCount === 1) return resolve([{ count: 0 }]);
+        return resolve([]);
+      });
 
       const res = await app.request('/issues?limit=500');
       expect(res.status).toBe(200);
-      // The handler caps at 100 internally
     });
 
     it('should filter by status', async () => {
-      mockDb._configureQueryResult([]);
+      let callCount = 0;
+      mockDb.then = vi.fn().mockImplementation((resolve: any) => {
+        callCount++;
+        if (callCount === 1) return resolve([{ count: 0 }]);
+        return resolve([]);
+      });
 
       const res = await app.request('/issues?status=acknowledged');
       expect(res.status).toBe(200);
     });
 
     it('should filter by severity', async () => {
-      mockDb._configureQueryResult([]);
+      let callCount = 0;
+      mockDb.then = vi.fn().mockImplementation((resolve: any) => {
+        callCount++;
+        if (callCount === 1) return resolve([{ count: 0 }]);
+        return resolve([]);
+      });
 
       const res = await app.request('/issues?severity=critical');
       expect(res.status).toBe(200);
     });
 
     it('should filter by type', async () => {
-      mockDb._configureQueryResult([]);
+      let callCount = 0;
+      mockDb.then = vi.fn().mockImplementation((resolve: any) => {
+        callCount++;
+        if (callCount === 1) return resolve([{ count: 0 }]);
+        return resolve([]);
+      });
 
       const res = await app.request('/issues?type=paid_no_access');
       expect(res.status).toBe(200);
@@ -184,6 +214,9 @@ describe('Issues API', () => {
 function createIssuesMockDb() {
   let selectResult: any[] = [];
   let queryResult: any[] = [];
+  // Track query calls to return appropriate results:
+  // GET /issues makes 2 queries: 1) count query, 2) results query
+  let thenCallCount = 0;
 
   const chainable: any = {
     select: vi.fn().mockReturnThis(),
@@ -199,7 +232,10 @@ function createIssuesMockDb() {
     offset: vi.fn().mockReturnThis(),
     returning: vi.fn().mockImplementation(() => Promise.resolve(selectResult)),
     catch: vi.fn().mockReturnThis(),
-    then: vi.fn().mockImplementation((resolve: any) => resolve(queryResult)),
+    then: vi.fn().mockImplementation((resolve: any) => {
+      thenCallCount++;
+      return resolve(queryResult);
+    }),
 
     _configureSelectResult(data: any[]) {
       selectResult = data;
@@ -207,9 +243,13 @@ function createIssuesMockDb() {
     },
     _configureQueryResult(data: any[]) {
       queryResult = data;
+      thenCallCount = 0;
     },
     _configureUpdateResult(data: any[]) {
       // Updates just need to not throw
+    },
+    _resetCallCount() {
+      thenCallCount = 0;
     },
   };
 

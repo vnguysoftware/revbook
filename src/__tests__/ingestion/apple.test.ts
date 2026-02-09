@@ -537,7 +537,7 @@ describe('AppleNormalizer', () => {
 
   // ─── verifySignature ─────────────────────────────────────────────
   describe('verifySignature', () => {
-    it('should return true for valid JWT structure', async () => {
+    it('should return false for JWT without x5c certificate chain', async () => {
       const payload = await createAppleNotificationPayload(
         'SUBSCRIBED',
         'INITIAL_BUY',
@@ -547,9 +547,11 @@ describe('AppleNormalizer', () => {
         JSON.stringify({ signedPayload: payload.signedPayload }),
       );
 
+      // Test JWS is signed with HS256 and has no x5c chain,
+      // so verifySignature correctly returns false
       const result = await normalizer.verifySignature(rawEvent, '');
 
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
 
     it('should return false for missing signedPayload', async () => {

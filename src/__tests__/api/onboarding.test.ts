@@ -13,6 +13,15 @@ vi.mock('../../config/logger.js', () => ({
   }),
 }));
 
+// Mock hashApiKey to return a predictable hash
+vi.mock('../../middleware/auth.js', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    hashApiKey: vi.fn().mockReturnValue('test_hash_value'),
+  };
+});
+
 // Mock Stripe for the onboarding route
 vi.mock('stripe', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -35,6 +44,8 @@ vi.mock('../../ingestion/backfill/stripe-backfill.js', () => {
   return { StripeBackfill: MockStripeBackfill };
 });
 
+const AUTH_HEADER = { Authorization: 'Bearer rev_test_key_for_onboarding' };
+
 describe('Onboarding API', () => {
   const orgId = 'org_onboarding_test';
   const orgSlug = 'test-org';
@@ -43,18 +54,16 @@ describe('Onboarding API', () => {
 
   beforeEach(() => {
     resetUuidCounter();
-    mockDb = createOnboardingMockDb();
+    mockDb = createOnboardingMockDb(orgId, orgSlug);
 
     app = new Hono();
-    app.use('*', async (c, next) => {
-      c.set('auth' as any, { orgId, orgSlug, apiKeyId: 'key_test' });
-      await next();
-    });
     app.route('/setup', createOnboardingRoutes(mockDb));
   });
 
   describe('POST /setup/org', () => {
     it('should create organization and return API key', async () => {
+      // /org skips auth middleware
+      mockDb._skipAuth();
       // No existing slug
       mockDb._configureSelectResult([]);
       // Org creation
@@ -80,6 +89,7 @@ describe('Onboarding API', () => {
     });
 
     it('should return 400 when name is missing', async () => {
+      mockDb._skipAuth();
       const res = await app.request('/setup/org', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -91,6 +101,7 @@ describe('Onboarding API', () => {
     });
 
     it('should return 400 when slug is missing', async () => {
+      mockDb._skipAuth();
       const res = await app.request('/setup/org', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,6 +111,7 @@ describe('Onboarding API', () => {
     });
 
     it('should return 409 when slug is already taken', async () => {
+      mockDb._skipAuth();
       // Existing org with same slug
       mockDb._configureSelectResult([{ id: 'existing-org' }]);
 
@@ -118,7 +130,7 @@ describe('Onboarding API', () => {
     it('should return 400 when stripeSecretKey is missing', async () => {
       const res = await app.request('/setup/stripe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH_HEADER },
         body: JSON.stringify({}),
       });
       expect(res.status).toBe(400);
@@ -127,13 +139,9 @@ describe('Onboarding API', () => {
     });
 
     it('should connect Stripe with valid key', async () => {
-      // First limit call: org lookup for slug
-      mockDb._configureSelectResult([{ slug: 'test-org' }]);
-      mockDb._configureInsertResult([]);
-
       const res = await app.request('/setup/stripe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH_HEADER },
         body: JSON.stringify({
           stripeSecretKey: 'sk_test_valid_key',
           webhookSecret: 'whsec_test',
@@ -153,7 +161,7 @@ describe('Onboarding API', () => {
     it('should return 400 when required fields are missing', async () => {
       const res = await app.request('/setup/apple', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH_HEADER },
         body: JSON.stringify({ keyId: 'key123' }),
       });
       expect(res.status).toBe(400);
@@ -162,12 +170,9 @@ describe('Onboarding API', () => {
     });
 
     it('should connect Apple with valid credentials', async () => {
-      mockDb._configureSelectResult([{ slug: 'test-org' }]);
-      mockDb._configureInsertResult([]);
-
       const res = await app.request('/setup/apple', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH_HEADER },
         body: JSON.stringify({
           keyId: 'key123',
           issuerId: 'issuer456',
@@ -186,13 +191,12 @@ describe('Onboarding API', () => {
 
   describe('GET /setup/status', () => {
     it('should return integration health status', async () => {
-      // The status endpoint now uses Promise.all for parallel queries.
-      // Each query resolves via the mock's .then()
-      // We need to handle multiple parallel calls by making each resolve to appropriate data.
-      let callCount = 0;
+      // Override then for the status endpoint's many parallel queries
+      // Auth middleware uses limit() (2 calls), then status endpoint uses then() (6 calls)
+      let thenCallCount = 0;
       mockDb.then = vi.fn().mockImplementation((resolve: any) => {
-        callCount++;
-        switch (callCount) {
+        thenCallCount++;
+        switch (thenCallCount) {
           case 1:
             // connections
             return resolve([{
@@ -223,7 +227,9 @@ describe('Onboarding API', () => {
         }
       });
 
-      const res = await app.request('/setup/status');
+      const res = await app.request('/setup/status', {
+        headers: AUTH_HEADER,
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
 
@@ -234,10 +240,10 @@ describe('Onboarding API', () => {
     });
 
     it('should report not ready when no connections', async () => {
-      let callCount = 0;
+      let thenCallCount = 0;
       mockDb.then = vi.fn().mockImplementation((resolve: any) => {
-        callCount++;
-        switch (callCount) {
+        thenCallCount++;
+        switch (thenCallCount) {
           case 1:
             return resolve([]); // no connections
           case 2:
@@ -255,7 +261,9 @@ describe('Onboarding API', () => {
         }
       });
 
-      const res = await app.request('/setup/status');
+      const res = await app.request('/setup/status', {
+        headers: AUTH_HEADER,
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
 
@@ -266,10 +274,21 @@ describe('Onboarding API', () => {
 
   describe('POST /setup/backfill/stripe', () => {
     it('should return 400 when Stripe not connected', async () => {
-      mockDb._configureSelectResult([]);
+      // Auth middleware uses limit() twice, then the route uses limit() once
+      // After auth (which returns default auth data), the route queries for stripe connection
+      let limitCallCount = 0;
+      mockDb.limit = vi.fn().mockImplementation(() => {
+        limitCallCount++;
+        // First 2 calls: auth middleware (apiKey lookup, org lookup)
+        if (limitCallCount === 1) return Promise.resolve([{ keyId: 'key_test', orgId, expiresAt: null }]);
+        if (limitCallCount === 2) return Promise.resolve([{ slug: orgSlug }]);
+        // 3rd call: billingConnections lookup - return empty (not connected)
+        return Promise.resolve([]);
+      });
 
       const res = await app.request('/setup/backfill/stripe', {
         method: 'POST',
+        headers: AUTH_HEADER,
       });
       expect(res.status).toBe(400);
       const body = await res.json();
@@ -277,15 +296,23 @@ describe('Onboarding API', () => {
     });
 
     it('should start backfill when Stripe is connected', async () => {
-      mockDb._configureSelectResult([{
-        id: 'conn-1',
-        orgId,
-        source: 'stripe',
-        credentials: { apiKey: 'sk_test_xxx' },
-      }]);
+      let limitCallCount = 0;
+      mockDb.limit = vi.fn().mockImplementation(() => {
+        limitCallCount++;
+        if (limitCallCount === 1) return Promise.resolve([{ keyId: 'key_test', orgId, expiresAt: null }]);
+        if (limitCallCount === 2) return Promise.resolve([{ slug: orgSlug }]);
+        // 3rd call: billingConnections lookup - return connection
+        return Promise.resolve([{
+          id: 'conn-1',
+          orgId,
+          source: 'stripe',
+          credentials: { apiKey: 'sk_test_xxx' },
+        }]);
+      });
 
       const res = await app.request('/setup/backfill/stripe', {
         method: 'POST',
+        headers: AUTH_HEADER,
       });
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -295,9 +322,13 @@ describe('Onboarding API', () => {
   });
 });
 
-function createOnboardingMockDb() {
+function createOnboardingMockDb(orgId: string, orgSlug: string) {
   let selectResult: any[] = [];
   let insertResult: any[] = [];
+  // Track limit calls so auth middleware gets proper data
+  // Auth middleware makes 2 limit calls: apiKey lookup, then org lookup
+  let limitCallCount = 0;
+  let authEnabled = true;
 
   const chainable: any = {
     select: vi.fn().mockReturnThis(),
@@ -310,7 +341,16 @@ function createOnboardingMockDb() {
     orderBy: vi.fn().mockReturnThis(),
     groupBy: vi.fn().mockReturnThis(),
     offset: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockImplementation(() => Promise.resolve(selectResult)),
+    limit: vi.fn().mockImplementation(() => {
+      limitCallCount++;
+      if (authEnabled) {
+        // First two limit calls per request are from the auth middleware
+        if (limitCallCount === 1) return Promise.resolve([{ keyId: 'key_test', orgId, expiresAt: null }]);
+        if (limitCallCount === 2) return Promise.resolve([{ slug: orgSlug }]);
+      }
+      // Subsequent calls (or all calls when auth is disabled) are from the route handler
+      return Promise.resolve(selectResult);
+    }),
     returning: vi.fn().mockImplementation(() => Promise.resolve(insertResult)),
     onConflictDoUpdate: vi.fn().mockImplementation(() => Promise.resolve([])),
     catch: vi.fn().mockReturnThis(),
@@ -318,9 +358,18 @@ function createOnboardingMockDb() {
 
     _configureSelectResult(data: any[]) {
       selectResult = data;
+      limitCallCount = 0; // reset for fresh request
     },
     _configureInsertResult(data: any[]) {
       insertResult = data;
+    },
+    _skipAuth() {
+      authEnabled = false;
+      limitCallCount = 0;
+    },
+    _enableAuth() {
+      authEnabled = true;
+      limitCallCount = 0;
     },
   };
 
