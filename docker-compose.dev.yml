@@ -1,0 +1,42 @@
+# Development overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This override mounts source code for hot reload and exposes debug ports.
+
+services:
+  # ─── Backend (dev mode with tsx watch) ──────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps
+    command: npx tsx watch src/index.ts
+    volumes:
+      - ./src:/app/src:ro
+      - ./migrations:/app/migrations:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./drizzle.config.ts:/app/drizzle.config.ts:ro
+    ports:
+      - "3000:3000"
+      - "9229:9229"   # Node.js debugger
+    environment:
+      DATABASE_URL: postgresql://revback:revback_secret@postgres:5432/revback
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+
+  # ─── Dashboard (Vite dev server with HMR) ──────────────────────────
+  dashboard:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    volumes:
+      - ./dashboard:/app
+      - dashboard_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3000
+
+volumes:
+  dashboard_node_modules:
+    driver: local
