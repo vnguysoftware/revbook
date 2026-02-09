@@ -402,12 +402,14 @@ Once you have 10 paying customers and validated messaging:
 
 ### One-Line Pitch
 
-> "We tell you when your billing is broken and how much it's costing you."
+> "Defend every dollar."
+
+Subtitle: "We watch your revenue so nothing slips through."
 
 Alternatives for different contexts:
-- Technical: "Real-time entitlement verification across Stripe and Apple IAP."
-- Business: "We find the revenue your billing systems are silently losing."
-- Sentry analogy: "Sentry for your monetization stack."
+- Technical: "AI that finds revenue issues, explains them, and helps you fix them."
+- Business: "We watch your revenue across every billing platform so nothing slips through."
+- Sentry analogy: "Sentry for your revenue."
 
 ### Competitive Positioning Statement
 
@@ -436,10 +438,10 @@ This is the most important objection to handle. You overcome it by making the ba
 ### Landing Page
 
 **Headline:**
-> Your billing systems are losing you money. We find it.
+> Defend every dollar.
 
 **Subheadline:**
-> Real-time detection of subscription billing errors across Stripe and Apple. See exactly which users are affected and how much revenue is at risk.
+> We watch your revenue so nothing slips through. AI that finds revenue issues across Stripe and Apple, explains them, and helps you fix them.
 
 **Hero section layout:**
 1. Headline + subheadline

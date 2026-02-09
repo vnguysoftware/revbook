@@ -9,20 +9,20 @@
 ### Slide 1: Title
 
 **RevBack**
-AI-Powered Billing Investigation for Subscription Companies
+Defend Every Dollar.
 
-*When your billing breaks, our AI knows why -- and tells you how to fix it.*
+*We watch your revenue so nothing slips through.*
 
 www.revback.io | hello@revback.io
 
 **Speaker Notes:**
-Open with: "Every subscription company loses money to billing errors. The question isn't whether it's happening to you -- it's whether anyone is investigating why." Pause. "Until now, the answer was no. Not at scale. Not across platforms. Not with root cause analysis. RevBack changes that." Keep this slide up 15 seconds max. Let the AI positioning land immediately -- this is not another alerting tool.
+Open with: "Defend every dollar. That's what RevBack does." Pause. "We watch your revenue across every billing platform so nothing slips through. When something's wrong, we find it, explain why, and help you fix it." Keep this slide up 15 seconds max. Let the mission land -- this is about confidence and protection, not just alerting.
 
 ---
 
 ### Slide 2: The Problem
 
-**Your billing systems are losing you money. And when they break, nobody investigates why.**
+**You've earned the revenue. But is every dollar accounted for?**
 
 Every subscription company bills through multiple systems -- Stripe for web, Apple for iOS, Google for Android. Each has its own events, its own timing, its own failure modes. None of them talk to each other.
 
@@ -68,7 +68,7 @@ The AI angle is the hook here, but don't oversell the technology -- sell the out
 
 ### Slide 4: The Solution
 
-**RevBack: AI-powered billing investigation for subscription companies.**
+**RevBack: AI that finds revenue issues, explains them, and helps you fix them.**
 
 RevBack connects to your billing providers, normalizes every event, and continuously monitors for issues. When something goes wrong, our AI investigates -- gathering context, analyzing event sequences, and delivering root cause analysis with specific recommendations.
 
@@ -79,7 +79,7 @@ Four capabilities, one platform:
 - **Cluster** -- AI groups related alerts into incidents. 15 noisy alerts become 1 actionable incident with a clear title and severity
 - **Learn** -- The system improves from your team's feedback. Confirm or dismiss findings, and RevBack adjusts confidence scores using Bayesian learning
 
-Think of it as **Sentry meets an AI analyst for your monetization stack.** Sentry tells you when your code throws errors. RevBack tells you when your billing is leaking money -- and investigates why.
+Think of it as **Sentry for your revenue.** Sentry watches your code. RevBack watches your revenue -- finding issues, explaining why they happened, and helping you fix them.
 
 No SDK required. No code changes. Read-only access. Set up in 30 minutes.
 
@@ -126,7 +126,7 @@ When a detector flags an issue, RevBack's AI Investigator runs a structured anal
 The full context is analyzed to produce a structured investigation:
 
 ```
-Issue: Paid, No Access
+Issue: Payment without Entitlement
 User: usr_7k2m9x (Stripe: cus_abc123, Apple: txn_xyz789)
 Confidence: 0.94
 
@@ -165,7 +165,7 @@ This is the "wow" slide. Walk through the example output line by line. "Look at 
 **From alert noise to incident clarity. Plus daily health insights.**
 
 **AI Grouper: 15 alerts become 1 incident.**
-When multiple issues are detected within a 4-hour window of the same type, RevBack's AI Grouper clusters them into a single incident. Clusters of 5+ issues get an AI-generated incident title that describes the pattern -- not just "5 paid-no-access issues" but "Apple webhook disruption affecting iOS renewals since 2:00 PM UTC."
+When multiple issues are detected within a 4-hour window of the same type, RevBack's AI Grouper clusters them into a single incident. Clusters of 5+ issues get an AI-generated incident title that describes the pattern -- not just "5 payment-without-entitlement issues" but "Apple webhook disruption affecting iOS renewals since 2:00 PM UTC."
 
 Auto-severity calculation:
 - **Critical:** >$100K estimated impact or >10 affected users
@@ -243,9 +243,9 @@ Lead with the ROI calculation tailored to the prospect: "At your ARR, even 1% le
 
 ### Slide 10: Call to Action
 
-**Your billing broke. Our AI knows why.**
+**Defend every dollar.**
 
-Connect your first billing source in 30 minutes. See AI-investigated issues within 24 hours. Know exactly what's broken, why, and how to fix it.
+Connect your first billing source in 30 minutes. See AI-investigated issues within 24 hours. We watch your revenue so nothing slips through.
 
 **For engineering leaders:**
 Stop spending engineering hours investigating billing alerts manually. Get AI-powered root cause analysis, incident clustering, and health insights -- automatically, for every issue, across every billing platform.
@@ -269,9 +269,9 @@ End with urgency and the AI angle. "Every day without AI-powered billing investi
 
 ---
 
-# RevBack: AI-Powered Billing Investigation
+# RevBack: Defend Every Dollar
 
-**When your billing breaks, our AI investigates why -- and tells you exactly how to fix it.**
+**We watch your revenue so nothing slips through. AI that finds revenue issues, explains them, and helps you fix them.**
 
 ---
 
@@ -297,7 +297,7 @@ RevBack connects to your payment systems, normalizes every event, and continuous
 Every detected issue gets a full AI investigation: the last 50 events, current entitlements, cross-platform identities, related past issues -- all analyzed to produce a root cause, revenue impact estimate, recommended fix, and confidence score. What takes an engineer 30 minutes, our AI does in seconds.
 
 ### 2. AI Incident Clustering
-Related alerts are grouped into incidents using temporal clustering and AI-generated titles. 15 noisy "paid-no-access" alerts become 1 actionable incident: "Apple webhook disruption affecting iOS renewals." Auto-severity: critical (>$100K or >10 users), warning ($1K-$100K or 3-10 users).
+Related alerts are grouped into incidents using temporal clustering and AI-generated titles. 15 noisy "payment-without-entitlement" alerts become 1 actionable incident: "Apple webhook disruption affecting iOS renewals." Auto-severity: critical (>$100K or >10 users), warning ($1K-$100K or 3-10 users).
 
 ### 3. AI Health Insights
 Daily and weekly reports with trends, anomalies, recommendations, and performance metrics. Your VP of Eng gets a morning summary: "12 new issues, 8 auto-resolved, $4,200 at risk. Recommendation: investigate Stripe webhook latency." The system learns from your team's feedback via Bayesian confidence adjustment.
@@ -308,9 +308,9 @@ Daily and weekly reports with trends, anomalies, recommendations, and performanc
 
 | | Detector | What it catches |
 |-|----------|----------------|
-| P0 | Paid, No Access | Payment succeeded, entitlement missing |
-| P0 | Access, No Payment | Active entitlement, no corresponding payment |
-| P0 | Refund Still Active | Refund processed, entitlement not revoked |
+| P0 | Payment without Entitlement | Payment succeeded, entitlement state did not transition |
+| P0 | Entitlement without Payment | Entitlement active, no corresponding payment recorded |
+| P0 | Refund Not Revoked | Refund recorded, entitlement not revoked |
 | P0 | Webhook Delivery Gap | Expected webhooks stopped arriving |
 | P1 | Cross-Platform Mismatch | Apple and Stripe disagree on the same user |
 | P1 | Silent Renewal Failure | Renewal expected but never received |
@@ -357,4 +357,4 @@ Book a walkthrough: **revback.io/demo**
 Start now: **app.revback.io**
 Email: **hello@revback.io**
 
-*Your billing broke. Our AI knows why.*
+*Defend every dollar. We watch your revenue so nothing slips through.*

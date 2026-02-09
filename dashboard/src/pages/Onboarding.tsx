@@ -169,10 +169,10 @@ export function OnboardingPage() {
       {/* Hero */}
       <div className="max-w-2xl mx-auto px-4 pt-12 pb-8 text-center">
         <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
-          Find your first billing issue
+          Defend every dollar
         </h1>
         <p className="text-gray-500 mt-2 text-lg">
-          Your first insight is just a connection away.
+          Connect your billing systems. We'll watch your revenue so nothing slips through.
         </p>
       </div>
 

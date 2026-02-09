@@ -208,7 +208,7 @@ Each issue has:
 
 ```json
 {
-  "issue_type": "paid_no_access",
+  "issue_type": "payment_without_entitlement",
   "severity": "critical | warning",
   "affected_users": [...],
   "estimated_revenue_impact": 1234.56,
@@ -279,7 +279,7 @@ Your real pitch is not:
 
 It’s:
 
-> “We tell you when your monetization is *wrong* and how much money it’s costing you.”
+> "Defend every dollar." — We watch your revenue so nothing slips through.
 
 If you can answer:
 

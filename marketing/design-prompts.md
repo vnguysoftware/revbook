@@ -191,7 +191,7 @@ indicators (red, amber, green dots), each with a small text bar suggesting a roo
 finding. One card shows a prominent revenue impact number: "$23,400/month at risk."
 
 Right one-third has a clean panel with the RevBack logo (text "RevBack" in #1a2d6d navy)
-and the tagline "Your billing broke. Our AI knows why." in smaller text below.
+and the tagline "Defend every dollar." in smaller text below.
 
 Color palette:
 - Background: white (#ffffff)
@@ -218,7 +218,7 @@ Design a LinkedIn post image for RevBack, an AI-powered billing investigation pl
 for subscription companies.
 
 Layout: Clean, professional design split into two sections. Top section (60%) shows a
-bold stat or insight -- large text reading "Your billing broke. Nobody investigated."
+bold stat or insight -- large text reading "Defend every dollar."
 in #1a2d6d (dark navy) on a white background. Below the stat, smaller text: "3-7% of
 subscription revenue leaks through billing errors every year. RevBack's AI investigates
 every issue -- automatically." Bottom section (40%) has a #4f6ef7 (medium blue)
@@ -345,10 +345,9 @@ Layout: Horizontal rectangle. Clean, two-column design.
 
 Left column (55%):
 - RevBack logo (wordmark "RevBack" in #1a2d6d dark navy) at the top-left with padding
-- Main headline below: "Your billing broke. Our AI knows why." in #1a2d6d (dark navy),
+- Main headline below: "Defend every dollar." in #1a2d6d (dark navy),
   bold sans-serif, large enough to read in a thumbnail
-- Subtext below the headline: "AI-powered billing investigation across Stripe, Apple,
-  and Google. Root cause analysis in seconds." in #4f6ef7 (medium blue), smaller font
+- Subtext below the headline: "We watch your revenue so nothing slips through." in #4f6ef7 (medium blue), smaller font
 
 Right column (45%):
 - A simplified, stylized visualization of the AI investigation flow. Data lines converge

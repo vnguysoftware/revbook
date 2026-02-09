@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**rev-back** is an entitlement correctness engine that detects payment and subscription issues across billing systems (Stripe, Apple App Store, Google Play, etc.). It normalizes billing events from multiple providers, resolves user identities across platforms, tracks entitlement state, and detects revenue leakage issues.
+**rev-back** — **"Defend every dollar."** We watch your revenue so nothing slips through.
+
+RevBack is an entitlement correctness engine that detects payment and subscription issues across billing systems (Stripe, Apple App Store, Google Play, etc.). It normalizes billing events from multiple providers, resolves user identities across platforms, tracks entitlement state, and uses AI to find revenue issues, explain them, and help you fix them.
 
 ## Commands
 

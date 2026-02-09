@@ -4,15 +4,15 @@
 
 ## 1. Show HN Post
 
-**Title:** Show HN: RevBack -- AI that investigates your subscription billing bugs
+**Title:** Show HN: RevBack -- Defend every dollar of your subscription revenue
 
-Billing monitoring tools tell you WHAT broke. We built RevBack to tell you WHY.
+We built RevBack to watch your revenue so nothing slips through. It finds issues, explains why, and helps you fix them.
 
 We run a subscription app on Stripe + Apple IAP. Our billing alerting was decent -- we'd get notified when a user paid but lost access, or when a refund wasn't revoked. But every alert still meant someone had to drop what they were doing, pull up logs, check entitlement state across platforms, figure out if other users were affected, and trace back to a root cause. It was the same 45-minute investigation every time.
 
 So we added an AI investigation layer. When RevBack detects a billing issue, it automatically gathers context -- the last 50 events for that user, all their entitlements, their cross-platform identity graph, related and similar issues from the past 24 hours -- and sends it to Claude (Anthropic's API) for analysis. The AI returns a root cause, impact assessment, fix recommendation, confidence score, and full reasoning chain.
 
-The second piece is temporal clustering. When 15 "paid-no-access" issues fire in 2 hours, they're probably the same incident. The grouper detects these clusters in 4-hour windows by issue type, and for clusters of 5+, generates an incident title like "Apple Webhook Outage -- 23 users affected" with a unified root cause.
+The second piece is temporal clustering. When 15 "payment-without-entitlement" issues fire in 2 hours, they're probably the same incident. The grouper detects these clusters in 4-hour windows by issue type, and for clusters of 5+, generates an incident title like "Apple Webhook Outage -- 23 users affected" with a unified root cause.
 
 Architecture for those curious:
 
@@ -23,7 +23,7 @@ Architecture for those curious:
 - Daily/weekly AI-enhanced health intelligence reports
 - Graceful degradation: everything works without an ANTHROPIC_API_KEY. AI features just become unavailable. The detection, normalization, and state machine run independently.
 
-Detectors we ship: paid-no-access, access-no-payment, refund-still-active, webhook-delivery-gap, cross-platform-mismatch, silent-renewal-failure, trial-no-conversion.
+Detectors we ship: payment-without-entitlement, entitlement-without-payment, refund-not-revoked, webhook-delivery-gap, cross-platform-mismatch, silent-renewal-failure, trial-no-conversion.
 
 Setup: point your billing webhooks at RevBack, connect Stripe/Apple API keys read-only, backfill gives immediate results. ~30 minutes.
 
@@ -34,11 +34,11 @@ Docs: [link]
 
 ---
 
-## 2. Blog Post: Why Your Billing Monitoring Needs an AI Investigator
+## 2. Blog Post: Defend Every Dollar — Why Subscription Revenue Needs a Watchdog
 
-### Why Your Billing Monitoring Needs an AI Investigator
+### Defend Every Dollar — Why Subscription Revenue Needs a Watchdog
 
-It's 3 PM on a Tuesday. Your billing alerting fires: "paid-no-access" detected for user #48291. Then another. Then five more. By 4 PM, you have 15 alerts.
+It's 3 PM on a Tuesday. Your billing alerting fires: "payment-without-entitlement" detected for user #48291. Then another. Then five more. By 4 PM, you have 15 alerts.
 
 Your on-call engineer starts triaging. They pull up the first user's event history in Stripe. Check the entitlement table. Look at the webhook logs. Cross-reference with Apple's transaction history. After 20 minutes, they identify the pattern: Apple's Server Notifications stopped delivering around 1 PM. Renewals happened on Apple's side, but your server never got the events, so entitlements expired.
 
@@ -84,7 +84,7 @@ When RevBack detects an issue, the AI investigator kicks off automatically. Here
 
 The investigation is only half the story. The other half is realizing that 15 alerts are actually one incident.
 
-RevBack's AI grouper runs temporal clustering: it looks for issues of the same type occurring within 4-hour windows. When a cluster hits 5+ issues, it generates an incident with an AI-written title and unified analysis. Those 15 "paid-no-access" alerts become one incident: **"Apple Webhook Outage -- 15 users affected, renewals not received between 13:00-14:30 UTC."**
+RevBack's AI grouper runs temporal clustering: it looks for issues of the same type occurring within 4-hour windows. When a cluster hits 5+ issues, it generates an incident with an AI-written title and unified analysis. Those 15 "payment-without-entitlement" alerts become one incident: **"Apple Webhook Outage -- 15 users affected, renewals not received between 13:00-14:30 UTC."**
 
 Your on-call engineer sees one incident instead of 15 alerts. The root cause is already identified. The affected users are already listed. The recommended fix is already written. Their job shifts from "investigate from scratch" to "review AI analysis and execute the fix."
 
@@ -127,14 +127,14 @@ It doesn't have to be that way.
 ## 3. Twitter/X Thread
 
 **Tweet 1:**
-Your billing monitoring tells you something broke.
+Every subscription company has revenue slipping through the cracks.
 
-It doesn't tell you why.
+The question is: do you know where, why, and how much?
 
-That's the gap that costs subscription companies 3-7% of revenue. Here's what actually needs to happen after an alert fires (thread):
+That's the gap. Here's what it takes to defend every dollar (thread):
 
 **Tweet 2:**
-Alert: "paid-no-access detected for user #48291"
+Alert: "payment-without-entitlement detected for user #48291"
 
 What happens next at most companies:
 
@@ -164,7 +164,7 @@ That's context gathering -- the part AI is genuinely good at.
 **Tweet 5:**
 Now add pattern recognition across alerts.
 
-15 "paid-no-access" issues in a 2-hour window, all Apple-sourced? That's not 15 issues. That's 1 incident: "Apple Webhook Outage."
+15 "payment-without-entitlement" issues in a 2-hour window, all Apple-sourced? That's not 15 issues. That's 1 incident: "Apple Webhook Outage."
 
 Temporal clustering + AI-generated incident summary. Your engineer sees 1 item, not 15.
 
