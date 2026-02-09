@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import type { Context, Next } from 'hono';
 import { getEnv } from '../config/env.js';
 import { createChildLogger } from '../config/logger.js';
+import type { SlackEnv } from './types.js';
 
 const log = createChildLogger('slack-verify');
 
@@ -10,7 +11,7 @@ const log = createChildLogger('slack-verify');
  * Verifies HMAC-SHA256 signature using the Slack signing secret.
  * See: https://api.slack.com/authentication/verifying-requests-from-slack
  */
-export async function verifySlackSignature(c: Context, next: Next) {
+export async function verifySlackSignature(c: Context<SlackEnv>, next: Next) {
   const env = getEnv();
   const signingSecret = env.SLACK_SIGNING_SECRET;
   if (!signingSecret) {

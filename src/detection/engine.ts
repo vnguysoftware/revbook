@@ -153,6 +153,11 @@ export class IssueDetectionEngine {
         log.error({ err, issueId: newIssue.id }, 'Failed to dispatch alert for new issue');
       });
 
+      // Notify CX channel for critical/warning issues (fire and forget)
+      notifyCxChannel(this.db, orgId, newIssue as Issue).catch((err) => {
+        log.error({ err, issueId: newIssue.id }, 'Failed to notify CX channel');
+      });
+
       return true;
     } catch (err: any) {
       // Handle race condition: if a duplicate was inserted between check and insert

@@ -3,7 +3,7 @@ import type { Database } from '../config/database.js';
 import { verifySlackSignature } from './verify.js';
 import { handleSlackCommand } from './handler.js';
 import { handleConversation } from './conversation.js';
-import type { SlackCommandPayload, SlackEventPayload } from './types.js';
+import type { SlackCommandPayload, SlackEventPayload, SlackEnv } from './types.js';
 import { createChildLogger } from '../config/logger.js';
 
 const log = createChildLogger('slack-router');
@@ -16,7 +16,7 @@ const log = createChildLogger('slack-router');
  *   POST /slack/interactions — Block Kit interactions (button clicks)
  */
 export function createSlackRoutes(db: Database) {
-  const app = new Hono();
+  const app = new Hono<SlackEnv>();
 
   // All routes verify Slack request signature
   app.use('*', verifySlackSignature);
@@ -25,7 +25,7 @@ export function createSlackRoutes(db: Database) {
 
   app.post('/commands', async (c) => {
     // Parse the URL-encoded body (stored by verify middleware)
-    const rawBody = c.get('rawBody') as string;
+    const rawBody = c.get('rawBody');
     const params = new URLSearchParams(rawBody);
     const payload: SlackCommandPayload = {
       token: params.get('token') || '',
@@ -58,7 +58,7 @@ export function createSlackRoutes(db: Database) {
   // ─── Events API ─────────────────────────────────────────────────
 
   app.post('/events', async (c) => {
-    const rawBody = c.get('rawBody') as string;
+    const rawBody = c.get('rawBody');
     let payload: SlackEventPayload;
 
     try {
@@ -109,7 +109,7 @@ export function createSlackRoutes(db: Database) {
   // ─── Interactions (Block Kit) ───────────────────────────────────
 
   app.post('/interactions', async (c) => {
-    const rawBody = c.get('rawBody') as string;
+    const rawBody = c.get('rawBody');
     const params = new URLSearchParams(rawBody);
     const payloadStr = params.get('payload');
 

@@ -34,6 +34,12 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
 
+  // ─── Slack CX Bot (optional — Slack bot only works if configured) ──
+  SLACK_BOT_TOKEN: z.string().optional(),
+  SLACK_SIGNING_SECRET: z.string().optional(),
+  SLACK_CX_CHANNEL_ID: z.string().optional(),
+  SLACK_CX_USER_IDS: z.string().optional(), // comma-separated Slack user IDs
+
   // ─── Scheduled Scans ──────────────────────────────────────────────
   ENABLE_SCHEDULED_SCANS: z.enum(['true', 'false']).default('true'),
 });

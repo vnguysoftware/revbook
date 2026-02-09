@@ -1,3 +1,8 @@
+// ─── Hono Env Type ─────────────────────────────────────────────────
+
+/** Hono env type for Slack routes — carries rawBody through middleware */
+export type SlackEnv = { Variables: { rawBody: string } };
+
 // ─── Slack Payload Types ────────────────────────────────────────────
 
 /** Slack slash command payload (application/x-www-form-urlencoded) */
