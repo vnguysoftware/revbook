@@ -280,7 +280,7 @@ async function seed() {
       name: 'Production API Key',
       keyHash: crypto.createHash('sha256').update('rev_live_acme_prod_key_demo_2024').digest('hex'),
       keyPrefix: 'rev_live',
-      scopes: ['events:read', 'events:write', 'issues:read', 'users:read', 'entitlements:read'],
+      scopes: ['*'],
       lastUsedAt: minutesAgo(3),
       expiresAt: null,
     },
