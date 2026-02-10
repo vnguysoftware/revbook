@@ -126,6 +126,8 @@ export class EntitlementEngine {
         source: event.source,
         state: 'inactive',
         externalSubscriptionId: event.externalSubscriptionId,
+        billingInterval: event.billingInterval,
+        planTier: event.planTier,
         stateHistory: [],
       })
       .onConflictDoNothing();
@@ -185,6 +187,8 @@ export class EntitlementEngine {
         stateHistory: history,
         currentPeriodStart: this.extractPeriodStart(event),
         currentPeriodEnd: this.extractPeriodEnd(event),
+        billingInterval: event.billingInterval ?? entitlement.billingInterval,
+        planTier: event.planTier ?? entitlement.planTier,
         updatedAt: new Date(),
       })
       .where(

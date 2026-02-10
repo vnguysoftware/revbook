@@ -86,6 +86,7 @@ export class StripeNormalizer implements EventNormalizer {
     // Extract financial details based on event type
     this.enrichWithFinancials(normalized, payload);
     this.enrichWithSubscriptionId(normalized, payload);
+    this.enrichWithPlanMetadata(normalized, payload);
 
     return [normalized];
   }
@@ -103,6 +104,7 @@ export class StripeNormalizer implements EventNormalizer {
       externalSubscriptionId: sub.id,
       rawPayload: payload as unknown as Record<string, unknown>,
       identityHints: this.extractIdentityHints(payload as unknown as Record<string, unknown>),
+      ...this.extractPlanMetadata(payload),
     };
 
     // Cancellation scheduled
@@ -182,6 +184,39 @@ export class StripeNormalizer implements EventNormalizer {
     } else if (obj.id?.startsWith('sub_')) {
       event.externalSubscriptionId = obj.id;
     }
+  }
+
+  private enrichWithPlanMetadata(event: NormalizedEvent, payload: Stripe.Event) {
+    const metadata = this.extractPlanMetadata(payload);
+    if (metadata.billingInterval) event.billingInterval = metadata.billingInterval;
+    if (metadata.planTier) event.planTier = metadata.planTier;
+    if (metadata.trialStartedAt) event.trialStartedAt = metadata.trialStartedAt;
+  }
+
+  private extractPlanMetadata(payload: Stripe.Event): { billingInterval?: string; planTier?: string; trialStartedAt?: Date } {
+    const obj = payload.data.object as any;
+    const result: { billingInterval?: string; planTier?: string; trialStartedAt?: Date } = {};
+
+    // Extract billing interval from subscription items or invoice lines
+    const interval = obj.items?.data?.[0]?.price?.recurring?.interval
+      || obj.lines?.data?.[0]?.price?.recurring?.interval;
+    if (interval) {
+      result.billingInterval = interval;
+    }
+
+    // Extract plan tier from price nickname
+    const nickname = obj.items?.data?.[0]?.price?.nickname
+      || obj.lines?.data?.[0]?.price?.nickname;
+    if (nickname) {
+      result.planTier = nickname;
+    }
+
+    // Extract trial start date
+    if (obj.trial_start) {
+      result.trialStartedAt = new Date(obj.trial_start * 1000);
+    }
+
+    return result;
   }
 
   extractIdentityHints(payload: Record<string, unknown>): IdentityHint[] {

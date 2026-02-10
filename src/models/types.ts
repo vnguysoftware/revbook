@@ -93,6 +93,9 @@ export interface NormalizedEvent {
   currency?: string;
   externalEventId?: string;
   externalSubscriptionId?: string;
+  billingInterval?: string;
+  planTier?: string;
+  trialStartedAt?: Date;
   idempotencyKey: string;
   rawPayload: Record<string, unknown>;
   identityHints: IdentityHint[];

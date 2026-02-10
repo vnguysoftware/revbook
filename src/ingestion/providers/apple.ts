@@ -229,6 +229,18 @@ export class AppleNormalizer implements EventNormalizer {
       normalized.currency = transaction.currency;
     }
 
+    // Plan metadata
+    // Extract plan tier from product ID (last segment, e.g. "com.app.premium" → "premium")
+    if (transaction.productId) {
+      const segments = transaction.productId.split('.');
+      normalized.planTier = segments[segments.length - 1];
+    }
+
+    // Trial start: if offerType === 1 (free trial), use purchaseDate
+    if (transaction.offerType === 1 && transaction.purchaseDate) {
+      normalized.trialStartedAt = new Date(transaction.purchaseDate);
+    }
+
     return [normalized];
   }
 

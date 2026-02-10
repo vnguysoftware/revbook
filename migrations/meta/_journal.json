@@ -8,6 +8,20 @@
       "when": 1738800000000,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1738900000000,
+      "tag": "0001_add_access_checks_and_detection_tier",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1739000000000,
+      "tag": "0002_add_plan_metadata",
+      "breakpoints": true
     }
   ]
 }

@@ -196,6 +196,9 @@ export const canonicalEvents = pgTable('canonical_events', {
   isFamilyShare: boolean('is_family_share').default(false),
   environment: varchar('environment', { length: 20 }).default('production'), // sandbox | production
   countryCode: varchar('country_code', { length: 5 }),
+  billingInterval: varchar('billing_interval', { length: 20 }), // month, year, week, day
+  planTier: varchar('plan_tier', { length: 100 }), // extracted from price nickname or product ID
+  trialStartedAt: timestamp('trial_started_at'),
   idempotencyKey: varchar('idempotency_key', { length: 512 }).notNull().unique(),
   rawPayload: jsonb('raw_payload').notNull(),
   processedAt: timestamp('processed_at'),
@@ -225,6 +228,8 @@ export const entitlements = pgTable('entitlements', {
   currentPeriodEnd: timestamp('current_period_end'),
   cancelAt: timestamp('cancel_at'),
   trialEnd: timestamp('trial_end'),
+  billingInterval: varchar('billing_interval', { length: 20 }),
+  planTier: varchar('plan_tier', { length: 100 }),
   lastEventId: uuid('last_event_id').references(() => canonicalEvents.id),
   stateHistory: jsonb('state_history').default([]),
   metadata: jsonb('metadata').default({}),
