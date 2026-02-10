@@ -36,6 +36,7 @@ import { rateLimit } from './middleware/rate-limit.js';
 import { startRetentionWorker, startRetentionScheduler } from './queue/retention-worker.js';
 import { createHealthRoutes } from './api/health.js';
 import { createCircuitBreakerRoutes } from './api/admin-circuit-breakers.js';
+import { createDocsRoutes } from './api/docs.js';
 
 const log = createChildLogger('server');
 
@@ -103,6 +104,9 @@ app.route('/', healthRoutes);
 // Webhook endpoints (no API key auth — use provider signature verification)
 app.use('/webhooks/*', rateLimit('webhook'));
 app.route('/webhooks', createWebhookRoutes(db));
+
+// API documentation (public, no auth)
+app.route('/docs', createDocsRoutes());
 
 // Setup/onboarding (some endpoints need auth, org creation doesn't)
 app.use('/setup/*', rateLimit('public'));
