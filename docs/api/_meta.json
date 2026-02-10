@@ -1,0 +1,16 @@
+{
+  "sections": [
+    { "slug": "getting-started", "title": "Getting Started", "group": null },
+    { "slug": "setup", "title": "Setup & Onboarding", "group": null },
+    { "slug": "webhooks", "title": "Webhook Ingestion", "group": null },
+    { "slug": "issues", "title": "Issues & Detection", "group": null },
+    { "slug": "users", "title": "Users & Subscribers", "group": null },
+    { "slug": "dashboard", "title": "Dashboard & Reporting", "group": null },
+    { "slug": "alerts", "title": "Alerts & Notifications", "group": null },
+    { "slug": "webhook-logs", "title": "Webhook Logs", "group": null },
+    { "slug": "access-checks", "title": "Access Checks (SDK)", "group": null },
+    { "slug": "data-management", "title": "Data Management (GDPR)", "group": null },
+    { "slug": "admin", "title": "Admin & Operations", "group": null },
+    { "slug": "types", "title": "Types Reference", "group": null }
+  ]
+}
