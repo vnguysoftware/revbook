@@ -15,29 +15,36 @@ Currently NO feature gating exists. All organizations get all features regardles
 
 ## Plan Tiers
 
-### Free ($0/mo)
-- 1 billing provider connection
-- Up to 1,000 subscribers tracked
+### Free Audit ($0/mo)
+- 1 billing provider (Stripe only)
+- Up to 5,000 subscribers tracked
 - 6 core detectors (Tier 1 only)
 - Email alerts only
 - 7-day webhook log retention
+- 30-day backfill scan
 - No AI features (investigation, clustering, insights)
 
-### Pro ($500-$1,500/mo)
-- All billing providers
-- Up to 100,000 subscribers
+### Pro ($499/mo)
+- All 4 billing providers
+- Up to 50,000 subscribers
 - All 8 detectors (Tier 1 + Tier 2)
-- Slack, email, webhook alerts
+- Slack, email, webhook, PagerDuty alerts
 - 90-day history + 30-day backfill
 - AI investigation on every issue
 - Incident clustering with AI titles
 - Identity resolution
 
-### Enterprise (Custom)
-- Unlimited subscribers
-- Unlimited AI investigations
+### Growth ($999/mo)
+- All 4 billing providers
+- Up to 250,000 subscribers
+- Everything in Pro
 - Billing health insights (daily/weekly)
 - Adaptive learning from operator feedback
+- Priority support
+
+### Enterprise (Custom)
+- Unlimited subscribers
+- Everything in Growth
 - Custom detectors (when implemented)
 - SSO / SAML (when implemented)
 - On-prem / VPC deployment
@@ -47,7 +54,7 @@ Currently NO feature gating exists. All organizations get all features regardles
 ## Implementation Steps
 
 ### 1. Schema Changes
-- Add `plan` enum to `organizations` table: `'free' | 'pro' | 'enterprise'`
+- Add `plan` enum to `organizations` table: `'free' | 'pro' | 'growth' | 'enterprise'`
 - Add `subscriberLimit`, `providerLimit` fields (nullable, null = unlimited)
 - Add `planExpiresAt` for trial tracking
 - Migration: default all existing orgs to 'free' or 'pro' based on config
@@ -61,14 +68,16 @@ Currently NO feature gating exists. All organizations get all features regardles
 
 ### 3. Feature Gating
 - Create `src/middleware/feature-gate.ts`
-- Gate AI endpoints (investigation, clustering, insights) behind pro/enterprise
-- Gate Tier 2 detectors behind pro/enterprise
-- Gate billing health insights behind enterprise
+- Gate AI endpoints (investigation, clustering) behind pro/growth/enterprise
+- Gate Tier 2 detectors behind pro/growth/enterprise
+- Gate billing health insights behind growth/enterprise
+- Gate adaptive learning behind growth/enterprise
 
 ### 4. Data Retention by Plan
 - Modify `src/queue/retention-worker.ts` to respect plan-based retention:
   - Free: 7-day webhook logs
   - Pro: 90-day webhook logs
+  - Growth: 90-day webhook logs
   - Enterprise: configurable (default unlimited)
 
 ### 5. Subscriber Counting
