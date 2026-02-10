@@ -15,6 +15,7 @@ import { createAlertRoutes } from './api/alerts.js';
 import { createAccessCheckRoutes } from './api/access-checks.js';
 import { createDataManagementRoutes } from './api/data-management.js';
 import { createFirstLookRoutes } from './api/first-look.js';
+import { createWebhookLogRoutes } from './api/webhook-logs.js';
 import { createDlqRoutes } from './queue/dlq.js';
 import { createQueueMonitorRoutes } from './queue/monitor.js';
 import { startWebhookWorker } from './queue/webhook-worker.js';
@@ -124,6 +125,7 @@ api.route('/first-look', createFirstLookRoutes(db));
 api.route('/alerts', createAlertRoutes(db));
 api.route('/access-checks', createAccessCheckRoutes(db));
 api.route('/data-management', createDataManagementRoutes(db));
+api.route('/webhook-logs', createWebhookLogRoutes(db));
 
 // Admin routes (also authenticated)
 api.route('/admin/dlq', createDlqRoutes());
@@ -238,6 +240,9 @@ const server = serve({ fetch: app.fetch, port }, () => {
   log.info('  DELETE /api/v1/alerts/:id        → Delete alert config');
   log.info('  POST   /api/v1/alerts/test       → Send test alert');
   log.info('  GET    /api/v1/alerts/history    → Alert delivery history');
+  log.info('  GET    /api/v1/webhook-logs       → Webhook delivery logs');
+  log.info('  GET    /api/v1/webhook-logs/stats  → Webhook stats');
+  log.info('  GET    /api/v1/webhook-logs/:id    → Webhook log detail');
   log.info('  GET    /api/v1/admin/queues      → Queue health');
   log.info('  GET    /api/v1/admin/dlq         → Dead letter queue');
   log.info('  POST   /api/v1/admin/dlq/:id/retry → Retry DLQ job');

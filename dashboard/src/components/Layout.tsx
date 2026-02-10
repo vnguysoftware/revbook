@@ -11,6 +11,7 @@ import {
   Bell,
   Sparkles,
   Radar,
+  FileText,
   Menu,
   X,
   ChevronDown,
@@ -28,6 +29,7 @@ const navItems = [
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/insights', icon: Sparkles, label: 'Insights' },
   { to: '/monitors', icon: Radar, label: 'Monitors' },
+  { to: '/webhook-logs', icon: FileText, label: 'Webhook Logs' },
 ];
 
 export function Layout() {

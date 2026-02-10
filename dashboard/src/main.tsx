@@ -12,6 +12,7 @@ import { OnboardingPage } from './pages/Onboarding';
 import { AlertsPage } from './pages/Alerts';
 import { InsightsPage } from './pages/Insights';
 import { MonitorsPage } from './pages/Monitors';
+import { WebhookLogsPage } from './pages/WebhookLogs';
 import { AccessCheckSetupPage } from './pages/AccessCheckSetup';
 import { ApiKeysPage } from './pages/ApiKeys';
 import { SettingsPage } from './pages/Settings';
@@ -42,6 +43,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/insights" element={<InsightsPage />} />
           <Route path="/monitors" element={<MonitorsPage />} />
+          <Route path="/webhook-logs" element={<WebhookLogsPage />} />
           <Route path="/connect-app" element={<AccessCheckSetupPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/account" element={<AccountSettingsPage />} />
