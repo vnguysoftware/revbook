@@ -629,6 +629,131 @@ export function createRawWebhookEvent(
   };
 }
 
+// ─── Google Play Pub/Sub Fixtures ─────────────────────────────────
+
+/**
+ * Creates a Google Cloud Pub/Sub push message containing a DeveloperNotification.
+ * The notification data is base64-encoded as Google Pub/Sub delivers it.
+ */
+export function createGooglePubSubMessage(
+  notificationType: 'subscription' | 'voided' | 'oneTime' | 'test',
+  overrides?: Partial<any>,
+) {
+  let notification: any;
+
+  if (notificationType === 'subscription') {
+    notification = {
+      version: '1.0',
+      packageName: 'com.example.app',
+      eventTimeMillis: String(new Date('2025-01-15T12:00:00Z').getTime()),
+      subscriptionNotification: {
+        version: '1.0',
+        notificationType: overrides?.subscriptionNotificationType ?? 4, // PURCHASED
+        purchaseToken: overrides?.purchaseToken ?? 'google_purchase_token_001',
+        subscriptionId: overrides?.subscriptionId ?? 'premium_monthly',
+      },
+      ...overrides?.notification,
+    };
+  } else if (notificationType === 'voided') {
+    notification = {
+      version: '1.0',
+      packageName: 'com.example.app',
+      eventTimeMillis: String(new Date('2025-01-15T12:00:00Z').getTime()),
+      voidedPurchaseNotification: {
+        purchaseToken: overrides?.purchaseToken ?? 'google_purchase_token_001',
+        orderId: overrides?.orderId ?? 'GPA.1234-5678-9012-34567',
+        productType: overrides?.productType ?? 1, // subscription
+        refundType: overrides?.refundType ?? 1, // full refund
+        ...overrides?.voidedPurchase,
+      },
+      ...overrides?.notification,
+    };
+  } else if (notificationType === 'oneTime') {
+    notification = {
+      version: '1.0',
+      packageName: 'com.example.app',
+      eventTimeMillis: String(new Date('2025-01-15T12:00:00Z').getTime()),
+      oneTimeProductNotification: {
+        version: '1.0',
+        notificationType: overrides?.oneTimeNotificationType ?? 1, // PURCHASED
+        purchaseToken: overrides?.purchaseToken ?? 'google_purchase_token_002',
+        sku: overrides?.sku ?? 'coin_pack_100',
+        ...overrides?.oneTimeProduct,
+      },
+      ...overrides?.notification,
+    };
+  } else {
+    // test notification
+    notification = {
+      version: '1.0',
+      packageName: 'com.example.app',
+      eventTimeMillis: String(new Date('2025-01-15T12:00:00Z').getTime()),
+      testNotification: {
+        version: '1.0',
+      },
+      ...overrides?.notification,
+    };
+  }
+
+  const data = Buffer.from(JSON.stringify(notification)).toString('base64');
+
+  return {
+    message: {
+      data,
+      messageId: overrides?.messageId ?? 'msg_google_001',
+      publishTime: overrides?.publishTime ?? '2025-01-15T12:00:00.000Z',
+      attributes: overrides?.attributes,
+    },
+    subscription: overrides?.subscription ?? 'projects/my-project/subscriptions/play-events',
+    // Expose decoded notification for test assertions
+    _notification: notification,
+  };
+}
+
+/**
+ * Creates a mock SubscriptionPurchaseV2 response from Google Play Developer API.
+ */
+export function createGoogleSubscriptionDetails(overrides?: Partial<any>) {
+  return {
+    kind: 'androidpublisher#subscriptionPurchaseV2',
+    regionCode: 'US',
+    startTime: '2025-01-15T12:00:00.000Z',
+    expiryTime: '2025-02-15T12:00:00.000Z',
+    subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+    linkedPurchaseToken: overrides?.linkedPurchaseToken ?? undefined,
+    acknowledgementState: 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED',
+    externalAccountIdentifiers: {
+      obfuscatedExternalAccountId: overrides?.obfuscatedExternalAccountId ?? 'user_ext_123',
+      obfuscatedExternalProfileId: overrides?.obfuscatedExternalProfileId ?? undefined,
+      ...overrides?.externalAccountIdentifiers,
+    },
+    lineItems: overrides?.lineItems ?? [
+      {
+        productId: 'premium',
+        expiryTime: '2025-02-15T12:00:00.000Z',
+        offerDetails: {
+          basePlanId: 'monthly',
+          offerId: undefined,
+        },
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * Creates a voided purchase notification for Google Play.
+ */
+export function createGoogleVoidedPurchaseNotification(
+  refundType: number = 1,
+  overrides?: Partial<any>,
+) {
+  return createGooglePubSubMessage('voided', {
+    refundType,
+    ...overrides,
+  });
+}
+
 // ─── Mock Logger ──────────────────────────────────────────────────
 
 export function createMockLogger() {

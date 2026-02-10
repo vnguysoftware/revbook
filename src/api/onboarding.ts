@@ -17,6 +17,7 @@ import type { AuthContext } from '../middleware/auth.js';
 import { hashApiKey } from '../middleware/auth.js';
 import { StripeBackfill } from '../ingestion/backfill/stripe-backfill.js';
 import { RecurlyBackfill } from '../ingestion/backfill/recurly-backfill.js';
+import { GoogleBackfill } from '../ingestion/backfill/google-backfill.js';
 import { createChildLogger } from '../config/logger.js';
 import { writeCredentials, readCredentials } from '../security/credentials.js';
 import { auditLog } from '../security/audit.js';
@@ -44,6 +45,11 @@ const connectRecurlySchema = z.object({
   webhookKey: z.string().optional(),
 });
 
+const connectGoogleSchema = z.object({
+  packageName: z.string().min(1, 'packageName is required'),
+  serviceAccountJson: z.string().min(1, 'serviceAccountJson is required'),
+});
+
 const connectAppleSchema = z.object({
   keyId: z.string().min(1, 'keyId is required'),
   issuerId: z.string().min(1, 'issuerId is required'),
@@ -63,12 +69,15 @@ const connectAppleSchema = z.object({
  * 2a. POST /setup/stripe           → Connect Stripe (just paste API key + webhook secret)
  * 2b. POST /setup/apple            → Connect Apple (paste credentials)
  * 2c. POST /setup/recurly          → Connect Recurly (API key + subdomain)
+ * 2d. POST /setup/google           → Connect Google Play (service account JSON + package name)
  * 3a. POST /setup/verify/stripe    → Verify Stripe connectivity
  * 3b. POST /setup/verify/apple     → Verify Apple credentials
  * 3c. POST /setup/verify/recurly   → Verify Recurly connectivity
+ * 3d. POST /setup/verify/google    → Verify Google Play connectivity
  * 4.  GET  /setup/status           → Check integration health (enhanced)
  * 5a. POST /setup/backfill/stripe  → Import historical data from Stripe
  * 5b. POST /setup/backfill/recurly → Import historical data from Recurly
+ * 5c. POST /setup/backfill/google  → Import Google Play purchase tokens
  * 6.  GET  /setup/backfill/progress → Real-time import progress
  * 7.  GET  /setup/security-info    → Security documentation for enterprise
  *
@@ -410,6 +419,107 @@ export function createOnboardingRoutes(db: Database) {
     });
   });
 
+  // ─── Step 2d: Connect Google Play ───────────────────────────────────
+
+  app.post('/google', async (c) => {
+    const { orgId } = c.get('auth') as AuthContext;
+    const body = await c.req.json();
+
+    const parsed = connectGoogleSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request body', details: parsed.error.flatten().fieldErrors }, 400);
+    }
+
+    const { packageName, serviceAccountJson } = parsed.data;
+
+    // Parse the service account JSON
+    let serviceAccount: { client_email?: string; private_key?: string };
+    try {
+      serviceAccount = JSON.parse(serviceAccountJson);
+    } catch {
+      return c.json({ error: 'Invalid service account JSON' }, 400);
+    }
+
+    if (!serviceAccount.client_email || !serviceAccount.private_key) {
+      return c.json({
+        error: 'Service account JSON must contain client_email and private_key fields',
+      }, 400);
+    }
+
+    // Validate credentials by generating an OAuth2 token
+    try {
+      const jose = await import('jose');
+      const privateKey = await jose.importPKCS8(serviceAccount.private_key, 'RS256');
+      const now = Math.floor(Date.now() / 1000);
+
+      await new jose.SignJWT({
+        iss: serviceAccount.client_email,
+        sub: serviceAccount.client_email,
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600,
+        scope: 'https://www.googleapis.com/auth/androidpublisher',
+      })
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+        .sign(privateKey);
+    } catch (err: any) {
+      return c.json({
+        error: 'Invalid service account credentials',
+        detail: err.message,
+      }, 400);
+    }
+
+    const [org] = await db
+      .select({ slug: organizations.slug })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    await db
+      .insert(billingConnections)
+      .values({
+        orgId,
+        source: 'google',
+        credentials: writeCredentials({
+          clientEmail: serviceAccount.client_email,
+          privateKey: serviceAccount.private_key,
+          packageName,
+        }),
+        isActive: true,
+      })
+      .onConflictDoUpdate({
+        target: [billingConnections.orgId, billingConnections.source],
+        set: {
+          credentials: writeCredentials({
+            clientEmail: serviceAccount.client_email,
+            privateKey: serviceAccount.private_key,
+            packageName,
+          }),
+          isActive: true,
+          updatedAt: new Date(),
+        },
+      });
+
+    log.info({ orgId }, 'Google Play connection configured');
+    auditLog(db, c.get('auth'), 'billing_connection.created', 'billing_connection', undefined, { source: 'google' });
+
+    return c.json({
+      connected: true,
+      source: 'google',
+      webhookUrl: `/webhooks/${org?.slug}/google`,
+      instructions: [
+        '1. Go to Google Cloud Console → Pub/Sub → Topics',
+        '2. Create a topic (or use the existing one for your app)',
+        '3. Create a push subscription with endpoint:',
+        `   YOUR_DOMAIN/webhooks/${org?.slug}/google`,
+        '4. In Google Play Console → Monetization Setup → Real-time developer notifications',
+        '5. Set the topic name to your Pub/Sub topic',
+        '6. For push authentication, configure the Pub/Sub subscription with an OAuth audience',
+        '7. Set the webhook secret in your billing connection to the audience URL',
+      ],
+    });
+  });
+
   // ─── Step 3: Verify Stripe Connectivity ─────────────────────────────
 
   app.post('/verify/stripe', async (c) => {
@@ -642,6 +752,101 @@ export function createOnboardingRoutes(db: Database) {
     });
   });
 
+  // ─── Step 3d: Verify Google Play Connectivity ──────────────────────
+
+  app.post('/verify/google', async (c) => {
+    const { orgId } = c.get('auth') as AuthContext;
+
+    const [conn] = await db
+      .select()
+      .from(billingConnections)
+      .where(
+        and(
+          eq(billingConnections.orgId, orgId),
+          eq(billingConnections.source, 'google'),
+        ),
+      )
+      .limit(1);
+
+    if (!conn) {
+      return c.json({ error: 'Google Play not connected. Run POST /setup/google first.' }, 400);
+    }
+
+    const checks: {
+      credentialsValid: boolean;
+      canGenerateToken: boolean;
+      canCallApi: boolean;
+      error: string | null;
+    } = {
+      credentialsValid: false,
+      canGenerateToken: false,
+      canCallApi: false,
+      error: null,
+    };
+
+    try {
+      const creds = readCredentials<{ clientEmail: string; privateKey: string; packageName: string }>(conn.credentials);
+
+      if (!creds.clientEmail || !creds.privateKey || !creds.packageName) {
+        checks.error = 'Missing required credential fields';
+        return c.json({
+          source: 'google',
+          verified: false,
+          checks,
+          message: 'Google Play credentials are incomplete',
+        });
+      }
+
+      checks.credentialsValid = true;
+
+      // Test JWT generation
+      const jose = await import('jose');
+      const privateKey = await jose.importPKCS8(creds.privateKey, 'RS256');
+      const now = Math.floor(Date.now() / 1000);
+
+      const jwt = await new jose.SignJWT({
+        iss: creds.clientEmail,
+        sub: creds.clientEmail,
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600,
+        scope: 'https://www.googleapis.com/auth/androidpublisher',
+      })
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+        .sign(privateKey);
+
+      checks.canGenerateToken = true;
+
+      // Test token exchange with Google OAuth2
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          assertion: jwt,
+        }),
+      });
+
+      if (tokenResponse.ok) {
+        checks.canCallApi = true;
+      } else {
+        const errBody = await tokenResponse.text().catch(() => '');
+        checks.error = `OAuth2 token exchange failed: ${tokenResponse.status} ${errBody}`;
+      }
+    } catch (err: any) {
+      checks.error = err.message;
+    }
+
+    return c.json({
+      source: 'google',
+      verified: checks.credentialsValid && checks.canGenerateToken && checks.canCallApi,
+      checks,
+      message: checks.canCallApi
+        ? 'Google Play credentials are valid and working'
+        : `Google Play verification failed: ${checks.error}`,
+    });
+  });
+
   // ─── Step 4: Check Integration Health (Enhanced) ────────────────────
 
   app.get('/status', async (c) => {
@@ -697,14 +902,15 @@ export function createOnboardingRoutes(db: Database) {
       );
 
     // Fetch backfill progress if available
-    let backfillProgress: { stripe: any; recurly: any } | null = null;
+    let backfillProgress: { stripe: any; recurly: any; google: any } | null = null;
     try {
-      const [stripeProgress, recurlyProgress] = await Promise.all([
+      const [stripeProgress, recurlyProgress, googleProgress] = await Promise.all([
         StripeBackfill.getProgress(orgId).catch(() => null),
         RecurlyBackfill.getProgress(orgId).catch(() => null),
+        GoogleBackfill.getProgress(orgId).catch(() => null),
       ]);
-      if (stripeProgress || recurlyProgress) {
-        backfillProgress = { stripe: stripeProgress, recurly: recurlyProgress };
+      if (stripeProgress || recurlyProgress || googleProgress) {
+        backfillProgress = { stripe: stripeProgress, recurly: recurlyProgress, google: googleProgress };
       }
     } catch {
       // Redis not available, skip
@@ -877,26 +1083,89 @@ export function createOnboardingRoutes(db: Database) {
     });
   });
 
+  // ─── Step 5c: Historical Backfill from Google Play ─────────────────
+
+  app.post('/backfill/google', async (c) => {
+    const { orgId } = c.get('auth') as AuthContext;
+
+    const [conn] = await db
+      .select()
+      .from(billingConnections)
+      .where(
+        and(
+          eq(billingConnections.orgId, orgId),
+          eq(billingConnections.source, 'google'),
+        ),
+      )
+      .limit(1);
+
+    if (!conn) {
+      return c.json({ error: 'Google Play not connected. Run POST /setup/google first.' }, 400);
+    }
+
+    // Check if backfill is already running
+    let existingProgress = null;
+    try {
+      existingProgress = await GoogleBackfill.getProgress(orgId);
+    } catch {
+      // Redis not available
+    }
+
+    if (existingProgress && (existingProgress.status === 'importing_subscriptions' || existingProgress.status === 'importing_events' || existingProgress.status === 'counting')) {
+      return c.json({
+        error: 'Backfill already in progress',
+        progress: existingProgress,
+      }, 409);
+    }
+
+    // Accept optional purchase tokens for targeted backfill
+    const body = await c.req.json().catch(() => ({}));
+    const purchaseTokens: string[] = Array.isArray(body.purchaseTokens) ? body.purchaseTokens : [];
+
+    // Start backfill in the background
+    const jobId = `backfill_google_${orgId}_${Date.now()}`;
+    const backfill = new GoogleBackfill(db);
+
+    // Fire and forget - don't await
+    backfill.run(orgId, purchaseTokens).catch((err) => {
+      log.error({ err, orgId, jobId }, 'Background Google Play backfill failed');
+    });
+
+    log.info({ orgId, jobId, tokenCount: purchaseTokens.length }, 'Google Play backfill started');
+
+    return c.json({
+      jobId,
+      status: 'started',
+      message: purchaseTokens.length > 0
+        ? `Importing ${purchaseTokens.length} purchase tokens from Google Play. Check /setup/backfill/progress for real-time updates.`
+        : 'Importing voided purchases from Google Play. Check /setup/backfill/progress for real-time updates.',
+      progressUrl: '/setup/backfill/progress',
+      estimatedTime: '2-10 minutes depending on data volume',
+    });
+  });
+
   // ─── Backfill Progress ──────────────────────────────────────────────
 
   app.get('/backfill/progress', async (c) => {
     const { orgId } = c.get('auth') as AuthContext;
 
-    const [stripeProgress, recurlyProgress] = await Promise.all([
+    const [stripeProgress, recurlyProgress, googleProgress] = await Promise.all([
       StripeBackfill.getProgress(orgId).catch(() => null),
       RecurlyBackfill.getProgress(orgId).catch(() => null),
+      GoogleBackfill.getProgress(orgId).catch(() => null),
     ]);
 
-    if (!stripeProgress && !recurlyProgress) {
+    if (!stripeProgress && !recurlyProgress && !googleProgress) {
       return c.json({
         status: 'not_started',
-        message: 'No backfill has been started. Run POST /setup/backfill/stripe or /setup/backfill/recurly to begin.',
+        message: 'No backfill has been started. Run POST /setup/backfill/stripe, /setup/backfill/recurly, or /setup/backfill/google to begin.',
       });
     }
 
     return c.json({
       stripe: stripeProgress || null,
       recurly: recurlyProgress || null,
+      google: googleProgress || null,
     });
   });
 

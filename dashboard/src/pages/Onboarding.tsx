@@ -18,7 +18,7 @@ import {
 
 type OnboardingPhase = 'auth' | 'connect' | 'import' | 'report';
 
-type ProviderChoice = 'stripe' | 'apple' | 'recurly' | 'both';
+type ProviderChoice = 'stripe' | 'apple' | 'recurly' | 'google' | 'both';
 
 interface VerifyCheck {
   label: string;
@@ -520,6 +520,12 @@ function SectionConnect({
   const [recurlyVerifyChecks, setRecurlyVerifyChecks] = useState<VerifyCheck[] | null>(null);
   const [recurlyVerifyDone, setRecurlyVerifyDone] = useState(false);
 
+  // Google Play fields
+  const [googlePackageName, setGooglePackageName] = useState('');
+  const [googleServiceAccountJson, setGoogleServiceAccountJson] = useState('');
+  const [googleVerifyChecks, setGoogleVerifyChecks] = useState<VerifyCheck[] | null>(null);
+  const [googleVerifyDone, setGoogleVerifyDone] = useState(false);
+
   if (isComplete) {
     return (
       <Section title="Connect Billing" isComplete animate={false}>
@@ -744,16 +750,99 @@ function SectionConnect({
     }
   }
 
+  async function handleGoogleConnect() {
+    if (!googlePackageName || !googleServiceAccountJson) {
+      setError('Package name and service account JSON are required');
+      return;
+    }
+    setConnecting(true);
+    setError('');
+
+    const checks: VerifyCheck[] = [
+      { label: 'Service account validated', status: 'checking' },
+      { label: 'Can generate OAuth2 token', status: 'pending' },
+      { label: 'Can access Google Play API', status: 'pending' },
+      { label: 'Configuring webhook endpoint...', status: 'pending' },
+    ];
+    setGoogleVerifyChecks([...checks]);
+
+    try {
+      const res = await fetch('/setup/google', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          packageName: googlePackageName,
+          serviceAccountJson: googleServiceAccountJson,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to connect');
+
+      checks[0] = { label: 'Service account validated', status: 'done' };
+      checks[1] = { ...checks[1], status: 'checking' };
+      setGoogleVerifyChecks([...checks]);
+
+      await delay(400);
+      const verifyRes = await fetch('/setup/verify/google', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      const verifyData = await verifyRes.json();
+
+      const c = verifyData.checks || {};
+
+      checks[1] = {
+        label: 'Can generate OAuth2 token',
+        status: c.canGenerateToken ? 'done' : 'error',
+        detail: c.canGenerateToken ? undefined : 'JWT generation failed',
+      };
+      checks[2] = { ...checks[2], status: 'checking' };
+      setGoogleVerifyChecks([...checks]);
+      await delay(500);
+
+      checks[2] = {
+        label: 'Can access Google Play API',
+        status: c.canCallApi ? 'done' : 'error',
+        detail: c.canCallApi ? undefined : c.error || 'API access check failed',
+      };
+      checks[3] = { ...checks[3], status: 'checking' };
+      setGoogleVerifyChecks([...checks]);
+      await delay(600);
+
+      checks[3] = {
+        label: 'Webhook endpoint configured',
+        status: 'done',
+        detail: `Pub/Sub push endpoint: ${data.webhookUrl}`,
+      };
+      setGoogleVerifyChecks([...checks]);
+      setGoogleVerifyDone(true);
+    } catch (err: any) {
+      setError(err.message);
+      const updated = (checks || []).map((ch) =>
+        ch.status === 'checking' ? { ...ch, status: 'error' as const, detail: err.message } : ch
+      );
+      setGoogleVerifyChecks(updated);
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   const showStripe = provider === 'stripe' || provider === 'both';
   const showApple = provider === 'apple' || provider === 'both';
   const showRecurly = provider === 'recurly';
+  const showGoogle = provider === 'google';
   const stripeReady = verifyDone;
   const appleReady = appleConnected;
   const recurlyReady = recurlyVerifyDone;
+  const googleReady = googleVerifyDone;
   const canProceed =
     (provider === 'stripe' && stripeReady) ||
     (provider === 'apple' && appleReady) ||
     (provider === 'recurly' && recurlyReady) ||
+    (provider === 'google' && googleReady) ||
     (provider === 'both' && stripeReady && appleReady);
 
   return (
@@ -763,19 +852,19 @@ function SectionConnect({
       </p>
 
       {/* Provider selector */}
-      <div className="flex gap-2 mb-5">
-        {(['stripe', 'apple', 'recurly', 'both'] as ProviderChoice[]).map((p) => (
+      <div className="flex gap-2 mb-5 flex-wrap">
+        {(['stripe', 'apple', 'google', 'recurly', 'both'] as ProviderChoice[]).map((p) => (
           <button
             key={p}
             onClick={() => { setProvider(p); setError(''); }}
             disabled={connecting}
-            className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors capitalize ${
+            className={`flex-1 min-w-[70px] py-2 text-sm font-medium rounded-lg transition-colors capitalize ${
               provider === p
                 ? 'bg-gray-900 text-white'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            {p === 'both' ? 'Both' : p === 'stripe' ? 'Stripe' : p === 'apple' ? 'Apple' : 'Recurly'}
+            {p === 'both' ? 'Both' : p === 'stripe' ? 'Stripe' : p === 'apple' ? 'Apple' : p === 'google' ? 'Google' : 'Recurly'}
           </button>
         ))}
       </div>
@@ -1036,6 +1125,112 @@ function SectionConnect({
             ))}
           </div>
           {recurlyVerifyDone && (
+            <div className="mt-4 pt-3 border-t border-gray-100">
+              <p className="text-sm font-medium text-green-700">Ready to import.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Google Play connection */}
+      {showGoogle && !googleVerifyChecks && (
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Package name
+            </label>
+            <input
+              type="text"
+              value={googlePackageName}
+              onChange={(e) => setGooglePackageName(e.target.value)}
+              placeholder="com.yourcompany.app"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Your Android app's package name from Google Play Console
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Service account JSON
+            </label>
+            <textarea
+              value={googleServiceAccountJson}
+              onChange={(e) => setGoogleServiceAccountJson(e.target.value)}
+              placeholder='Paste your service account JSON key file contents here...'
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-y"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Create at{' '}
+              <a
+                href="https://console.cloud.google.com/iam-admin/serviceaccounts"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand-500 hover:underline"
+              >
+                Google Cloud Console &gt; IAM &gt; Service Accounts
+              </a>
+              {' '}with Android Publisher API access
+            </p>
+          </div>
+          <button
+            onClick={handleGoogleConnect}
+            disabled={connecting || !googlePackageName || !googleServiceAccountJson}
+            className="w-full px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            {connecting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              'Connect'
+            )}
+          </button>
+          <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <p className="text-xs font-medium text-gray-700 mb-1">Pub/Sub setup</p>
+            <p className="text-xs text-gray-500">
+              In Google Cloud Console &rarr; Pub/Sub &rarr; Create a push subscription &rarr;
+              Set endpoint to your webhook URL. Then in Play Console &rarr; Monetization Setup &rarr;
+              Configure the topic for real-time notifications.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Google Play verification checklist */}
+      {showGoogle && googleVerifyChecks && (
+        <div className="mb-4">
+          <div className="space-y-2.5">
+            {googleVerifyChecks.map((check, i) => (
+              <div key={i} className="flex items-center gap-2.5">
+                {check.status === 'done' && (
+                  <CheckCircle size={16} className="text-green-500 flex-shrink-0" />
+                )}
+                {check.status === 'checking' && (
+                  <Loader2 size={16} className="text-gray-400 animate-spin flex-shrink-0" />
+                )}
+                {check.status === 'pending' && (
+                  <div className="w-4 h-4 rounded-full border-2 border-gray-200 flex-shrink-0" />
+                )}
+                {check.status === 'error' && (
+                  <XCircle size={16} className="text-red-500 flex-shrink-0" />
+                )}
+                <div>
+                  <span className={`text-sm ${
+                    check.status === 'done' ? 'text-gray-900' :
+                    check.status === 'error' ? 'text-red-700' :
+                    check.status === 'checking' ? 'text-gray-700' :
+                    'text-gray-400'
+                  }`}>
+                    {check.label}
+                  </span>
+                  {check.detail && (
+                    <p className="text-xs text-gray-400 mt-0.5">{check.detail}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {googleVerifyDone && (
             <div className="mt-4 pt-3 border-t border-gray-100">
               <p className="text-sm font-medium text-green-700">Ready to import.</p>
             </div>

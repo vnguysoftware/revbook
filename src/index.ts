@@ -27,6 +27,7 @@ import { registerNormalizer } from './ingestion/normalizer/base.js';
 import { StripeNormalizer } from './ingestion/providers/stripe.js';
 import { AppleNormalizer } from './ingestion/providers/apple.js';
 import { RecurlyNormalizer } from './ingestion/providers/recurly.js';
+import { GoogleNormalizer } from './ingestion/providers/google.js';
 import { createSlackRoutes, isSlackEnabled } from './slack/index.js';
 import { createMcpRoutes } from './mcp/transport.js';
 import { startWebhookDeliveryWorker } from './queue/webhook-delivery-worker.js';
@@ -45,6 +46,7 @@ const db = getDb();
 registerNormalizer(new StripeNormalizer());
 registerNormalizer(new AppleNormalizer());
 registerNormalizer(new RecurlyNormalizer());
+registerNormalizer(new GoogleNormalizer());
 
 // Start queue workers
 startWebhookWorker();
@@ -217,9 +219,13 @@ const server = serve({ fetch: app.fetch, port }, () => {
   log.info('  POST   /webhooks/:org/stripe     → Stripe webhooks');
   log.info('  POST   /webhooks/:org/apple      → Apple webhooks (with proxy)');
   log.info('  POST   /webhooks/:org/recurly    → Recurly webhooks');
+  log.info('  POST   /webhooks/:org/google     → Google Play webhooks');
   log.info('  POST   /setup/recurly            → Connect Recurly');
   log.info('  POST   /setup/verify/recurly     → Verify Recurly connectivity');
   log.info('  POST   /setup/backfill/recurly   → Import Recurly history');
+  log.info('  POST   /setup/google             → Connect Google Play');
+  log.info('  POST   /setup/verify/google      → Verify Google Play connectivity');
+  log.info('  POST   /setup/backfill/google    → Import Google Play history');
   log.info('  GET    /api/v1/first-look        → First Look report');
   log.info('  GET    /api/v1/issues            → Issue feed');
   log.info('  GET    /api/v1/issues/summary    → Issue summary');

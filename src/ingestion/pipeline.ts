@@ -7,6 +7,8 @@ import { IdentityResolver } from '../identity/resolver.js';
 import { EntitlementEngine } from '../entitlement/engine.js';
 import { IssueDetectionEngine } from '../detection/engine.js';
 import { sanitizePayload } from '../security/sanitize.js';
+import { readCredentials } from '../security/credentials.js';
+import { GoogleNormalizer } from './providers/google.js';
 import { createChildLogger } from '../config/logger.js';
 
 const log = createChildLogger('ingestion-pipeline');
@@ -101,6 +103,18 @@ export class IngestionPipeline {
         }
       }
 
+      // 2b. Inject Google credentials if needed (for API enrichment)
+      if (source === 'google' && normalizer instanceof GoogleNormalizer && connection.credentials) {
+        try {
+          const creds = readCredentials<{ clientEmail: string; privateKey: string; packageName: string }>(connection.credentials);
+          if (creds.clientEmail && creds.privateKey && creds.packageName) {
+            normalizer.setCredentials(creds.clientEmail, creds.privateKey, creds.packageName);
+          }
+        } catch (err) {
+          log.warn({ err }, 'Failed to read Google credentials for API enrichment — proceeding without');
+        }
+      }
+
       // 3. Normalize into canonical events
       const normalized = await normalizer.normalize(orgId, rawEvent);
 
@@ -165,6 +179,26 @@ export class IngestionPipeline {
 
     try {
       const normalizer = getNormalizer(source);
+
+      // Inject Google credentials for API enrichment in trusted (backfill) context
+      if (source === 'google' && normalizer instanceof GoogleNormalizer) {
+        const [connection] = await this.db
+          .select()
+          .from(billingConnections)
+          .where(and(eq(billingConnections.orgId, orgId), eq(billingConnections.source, 'google')))
+          .limit(1);
+        if (connection?.credentials) {
+          try {
+            const creds = readCredentials<{ clientEmail: string; privateKey: string; packageName: string }>(connection.credentials);
+            if (creds.clientEmail && creds.privateKey && creds.packageName) {
+              normalizer.setCredentials(creds.clientEmail, creds.privateKey, creds.packageName);
+            }
+          } catch (err) {
+            log.warn({ err }, 'Failed to read Google credentials for backfill enrichment');
+          }
+        }
+      }
+
       const normalized = await normalizer.normalize(orgId, rawEvent);
 
       if (normalized.length === 0) {
