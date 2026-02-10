@@ -1,9 +1,10 @@
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '../config/database.js';
 import { alertConfigurations, alertDeliveryLogs } from '../models/schema.js';
-import type { Issue, SlackAlertConfig, EmailAlertConfig } from '../models/types.js';
+import type { Issue, SlackAlertConfig, EmailAlertConfig, WebhookAlertConfig } from '../models/types.js';
 import { sendSlackAlert } from './slack.js';
 import { sendEmailAlert } from './email.js';
+import { enqueueWebhookDelivery } from '../queue/webhook-delivery-worker.js';
 import { createChildLogger } from '../config/logger.js';
 
 const log = createChildLogger('alert-dispatcher');
@@ -72,22 +73,38 @@ export async function dispatchAlert(
           result = await sendEmailAlert(emailConfig.recipients, issue);
           break;
         }
+        case 'webhook': {
+          const webhookConfig = config.config as unknown as WebhookAlertConfig;
+          // Webhooks are delivered async via BullMQ for retries
+          await enqueueWebhookDelivery({
+            orgId,
+            alertConfigId: config.id,
+            issueId: issue.id,
+            issue,
+            config: webhookConfig,
+            eventType: 'issue.created',
+          });
+          result = { success: true };
+          break;
+        }
         default:
           log.warn({ channel: config.channel }, 'Unknown alert channel');
           continue;
       }
 
-      // Log the delivery attempt
-      await db.insert(alertDeliveryLogs).values({
-        orgId,
-        alertConfigId: config.id,
-        issueId: issue.id,
-        channel: config.channel,
-        status: result.success ? 'sent' : 'failed',
-        errorMessage: result.error || null,
-      }).catch((err) => {
-        log.error({ err, configId: config.id }, 'Failed to log alert delivery');
-      });
+      // Log the delivery attempt (webhook logs its own via the worker)
+      if (config.channel !== 'webhook') {
+        await db.insert(alertDeliveryLogs).values({
+          orgId,
+          alertConfigId: config.id,
+          issueId: issue.id,
+          channel: config.channel,
+          status: result.success ? 'sent' : 'failed',
+          errorMessage: result.error || null,
+        }).catch((err) => {
+          log.error({ err, configId: config.id }, 'Failed to log alert delivery');
+        });
+      }
 
       if (result.success) {
         log.info(

@@ -14,7 +14,7 @@ import { entitlements, canonicalEvents } from '../../models/schema.js';
 export const paidNoAccessDetector: IssueDetector = {
   id: 'payment_without_entitlement',
   name: 'Payment Not Provisioned',
-  description: 'A successful payment was recorded but the subscription state was not updated. This may indicate a webhook processing failure or billing system inconsistency.',
+  description: 'A successful payment was recorded in your billing provider, but your app did not grant the user access. This usually means the payment webhook was received but your server did not update the user\'s access rights — often due to an error in the webhook handler or a race condition.',
 
   async checkEvent(db, orgId, userId, event) {
     const issues: DetectedIssue[] = [];

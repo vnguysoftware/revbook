@@ -13,7 +13,7 @@ import { entitlements } from '../../models/schema.js';
 export const trialNoConversionDetector: IssueDetector = {
   id: 'trial_no_conversion',
   name: 'Trial Expired Without Conversion',
-  description: 'Trial period ended but no conversion or expiration event received',
+  description: 'This user\'s trial period ended but your app received no conversion or cancellation event from the billing provider. The user may be in limbo — neither paying nor explicitly churned.',
 
   async checkEvent() {
     return []; // Scheduled scan only

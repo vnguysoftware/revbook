@@ -124,8 +124,9 @@ export class AppleNormalizer implements EventNormalizer {
    * Apple signs notifications using a JWS with an x5c certificate chain.
    * We verify by:
    * 1. Extracting the x5c chain from the JWS protected header
-   * 2. Verifying the root certificate matches Apple's known G3 root CA
-   * 3. Verifying the JWS signature using the leaf certificate's public key
+   * 2. Verifying the chain has at least 3 certificates (leaf, intermediate, root)
+   * 3. Verifying the root certificate matches Apple's known G3 root CA
+   * 4. Verifying the JWS signature using the leaf certificate's public key
    *
    * The `secret` parameter is unused for Apple (verification uses x5c chain,
    * not a shared secret) but is required by the EventNormalizer interface.
@@ -146,7 +147,13 @@ export class AppleNormalizer implements EventNormalizer {
         return false;
       }
 
-      // 2. Verify the root certificate matches Apple's known root CA
+      // 2. Apple's chain should have at least 3 certs: leaf, intermediate, root
+      if (x5c.length < 3) {
+        log.warn({ chainLength: x5c.length }, 'Apple JWS certificate chain too short (expected >= 3)');
+        return false;
+      }
+
+      // 3. Verify the root certificate matches Apple's known root CA
       // The x5c array is ordered: [leaf, intermediate, ..., root]
       const rootCertB64 = x5c[x5c.length - 1];
       const knownRootB64 = APPLE_ROOT_CA_G3_PEM
@@ -159,15 +166,16 @@ export class AppleNormalizer implements EventNormalizer {
         return false;
       }
 
-      // 3. Import the leaf certificate's public key and verify the JWS
+      // 4. Import the leaf certificate's public key and verify the JWS
+      const alg = protectedHeader.alg || 'ES256';
       const leafCert = await jose.importX509(
         `-----BEGIN CERTIFICATE-----\n${x5c[0]}\n-----END CERTIFICATE-----`,
-        protectedHeader.alg || 'ES256',
+        alg,
       );
 
-      // 4. Verify the JWS signature
+      // 5. Verify the JWS signature using the leaf certificate
       const { payload } = await jose.jwtVerify(jws, leafCert, {
-        algorithms: [protectedHeader.alg || 'ES256'],
+        algorithms: [alg],
       });
 
       return !!payload;

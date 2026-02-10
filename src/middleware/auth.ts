@@ -11,6 +11,7 @@ export type AuthContext = {
   orgId: string;
   orgSlug: string;
   apiKeyId: string;
+  scopes: string[];
 };
 
 /**
@@ -42,6 +43,7 @@ export function createAuthMiddleware(db: Database) {
         keyId: apiKeys.id,
         orgId: apiKeys.orgId,
         expiresAt: apiKeys.expiresAt,
+        scopes: apiKeys.scopes,
       })
       .from(apiKeys)
       .where(eq(apiKeys.keyHash, keyHash))
@@ -76,6 +78,7 @@ export function createAuthMiddleware(db: Database) {
       orgId: found.orgId,
       orgSlug: org.slug,
       apiKeyId: found.keyId,
+      scopes: (found.scopes as string[]) || [],
     });
 
     await next();

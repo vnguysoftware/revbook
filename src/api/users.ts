@@ -3,6 +3,7 @@ import { eq, and, desc, count, sql } from 'drizzle-orm';
 import type { Database } from '../config/database.js';
 import { users, userIdentities, canonicalEvents, entitlements, issues } from '../models/schema.js';
 import type { AuthContext } from '../middleware/auth.js';
+import { requireScope } from '../middleware/require-scope.js';
 
 /**
  * User API — the "user timeline" view.
@@ -16,7 +17,7 @@ export function createUserRoutes(db: Database) {
 
   // ─── List Users (paginated, with optional search) ──────────────────
 
-  app.get('/', async (c) => {
+  app.get('/', requireScope('users:read'), async (c) => {
     const { orgId } = c.get('auth');
     const limit = Math.min(parseInt(c.req.query('limit') || '25'), 100);
     const offset = parseInt(c.req.query('offset') || '0') || 0;
@@ -55,7 +56,7 @@ export function createUserRoutes(db: Database) {
 
   // ─── Search Users ───────────────────────────────────────────────────
 
-  app.get('/search', async (c) => {
+  app.get('/search', requireScope('users:read'), async (c) => {
     const { orgId } = c.get('auth');
     const query = c.req.query('q');
     const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
@@ -107,7 +108,7 @@ export function createUserRoutes(db: Database) {
 
   // ─── User Timeline (all events, all systems) ───────────────────────
 
-  app.get('/:userId/timeline', async (c) => {
+  app.get('/:userId/timeline', requireScope('users:read'), async (c) => {
     const { orgId } = c.get('auth');
     const userId = c.req.param('userId');
     const limit = Math.min(parseInt(c.req.query('limit') || '100'), 500);
@@ -127,7 +128,7 @@ export function createUserRoutes(db: Database) {
 
   // ─── User Entitlements ──────────────────────────────────────────────
 
-  app.get('/:userId/entitlements', async (c) => {
+  app.get('/:userId/entitlements', requireScope('users:read'), async (c) => {
     const { orgId } = c.get('auth');
     const userId = c.req.param('userId');
 
@@ -143,7 +144,7 @@ export function createUserRoutes(db: Database) {
 
   // ─── User Identities ───────────────────────────────────────────────
 
-  app.get('/:userId/identities', async (c) => {
+  app.get('/:userId/identities', requireScope('users:read'), async (c) => {
     const { orgId } = c.get('auth');
     const userId = c.req.param('userId');
 
@@ -159,7 +160,7 @@ export function createUserRoutes(db: Database) {
 
   // ─── User Issues ────────────────────────────────────────────────────
 
-  app.get('/:userId/issues', async (c) => {
+  app.get('/:userId/issues', requireScope('users:read'), async (c) => {
     const { orgId } = c.get('auth');
     const userId = c.req.param('userId');
 
@@ -176,7 +177,7 @@ export function createUserRoutes(db: Database) {
 
   // ─── Full User Profile (combined view for dashboard) ────────────────
 
-  app.get('/:userId', async (c) => {
+  app.get('/:userId', requireScope('users:read'), async (c) => {
     const { orgId } = c.get('auth');
     const userId = c.req.param('userId');
 

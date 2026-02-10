@@ -60,41 +60,41 @@ interface Issue {
 
 const RECOMMENDED_ACTION_TEXT: Record<string, string> = {
   webhook_delivery_gap:
-    'Check your provider webhook configuration in the provider dashboard. Verify the endpoint URL is correct and the signing secret matches. If the provider is experiencing an outage, monitor their status page.',
+    'Your billing provider stopped sending event notifications (webhooks) to your server. Without these, your app won\'t know about new payments, cancellations, or refunds. Open your provider\'s developer dashboard (e.g., Stripe > Developers > Webhooks) and verify the endpoint URL and signing secret are correct.',
   stale_subscription:
-    'Review subscriptions with stale data. These accounts may have churned silently or have broken webhook delivery. Consider triggering a re-sync via the Stripe API to refresh their state.',
+    'These subscriptions haven\'t received any billing events (payments, renewals, cancellations) in over 35 days. This usually means webhooks are silently failing, so your records are out of date. Trigger a data re-sync from your billing provider\'s API to refresh their actual status.',
   duplicate_subscription:
-    'This user is paying on multiple platforms. Cancel the duplicate subscription on the platform the user does not actively use, and issue a prorated refund for the overlap period.',
+    'This user is being charged on two platforms at once (e.g., both Stripe and Apple) for the same product. They\'re paying double. Cancel the subscription on the platform they\'re not actively using and issue a prorated refund for the overlap period.',
   cross_platform_mismatch:
-    'Compare subscription states in both platforms. One shows active while the other shows expired. Determine the correct state and sync them.',
+    'This user\'s subscription shows as active on one platform but expired on another. This mismatch means your app may be granting or denying access incorrectly. Check both platform dashboards to determine their true subscription status and update the incorrect one.',
   refund_not_revoked:
-    'A refund was processed but the user\'s access was not revoked. Update the user\'s entitlement state to "refunded" and revoke access. For chargebacks, also flag the account for review.',
+    'A refund was processed in your billing provider, but your app still shows this user as having access. When a refund occurs, your backend needs to revoke the user\'s access. Check your webhook handler for refund/chargeback events and ensure it updates the user\'s access accordingly.',
   unusual_renewal_pattern:
-    'Renewal rates dropped significantly vs baseline. Investigate whether this correlates with a pricing change, payment method expiry cohort, or a billing provider issue. Check failed payment logs.',
+    'Fewer subscriptions renewed this period than expected based on your historical average. This could indicate expired payment methods across a cohort, a recent pricing change causing drop-off, or a billing provider issue. Check your failed payment logs in the provider dashboard for patterns.',
   verified_paid_no_access:
-    'URGENT: This paying customer cannot access the product. Provision their entitlement immediately. Check your access provisioning logic for race conditions or webhook processing delays.',
+    'URGENT: This customer is paying but your app is not granting them access. This means your backend received the payment webhook but didn\'t update the user\'s access rights. Check your webhook handler to ensure it grants access after a successful payment, and restore this user\'s access immediately.',
   verified_access_no_payment:
-    'This user has access without an active payment. Verify whether this is intentional (comp/internal account) or a provisioning bug. If unauthorized, revoke access and investigate the access grant path.',
+    'This user has access to your product but doesn\'t have an active paid subscription. Check whether this is intentional (e.g., a comp or team account). If not, your backend may be granting access without verifying payment status. Revoke access if unauthorized and review your access-granting logic.',
   // Seed data / legacy detector IDs
   payment_without_entitlement:
-    'Check webhook processing pipeline. A payment was received but the subscription state was not updated. Verify your webhook handler provisions entitlements after successful payments.',
+    'Stripe (or your billing provider) confirmed a successful payment, but your app\'s backend didn\'t grant the user access. This typically happens when your webhook handler receives the payment event but fails to update the user\'s access rights. Check your server logs for errors around the time of this payment, and verify your webhook endpoint is processing payment_intent.succeeded (Stripe) or similar events correctly.',
   entitlement_without_payment:
-    'Review this user\'s billing history. Their subscription appears active but no recent payment was recorded. Check if a renewal webhook was missed or if the billing provider shows a different status.',
+    'Your app shows this user as having an active subscription, but no recent payment has been recorded from the billing provider. A renewal webhook may have been missed or failed silently. Check the user\'s payment history directly in your billing provider\'s dashboard (e.g., Stripe > Customers) to see if their status differs from what your app shows.',
   silent_renewal_failure:
-    'Check if this user\'s renewal was expected. Review their payment method status and contact the billing provider if the renewal appears stuck.',
+    'This subscription\'s billing period ended, but no renewal event was received. The user\'s payment may have failed without your app being notified. Check their payment method status in your billing provider\'s dashboard and look for any failed charge attempts.',
   trial_no_conversion:
-    'Review if this user intended to convert. Consider sending a targeted win-back email or extending the trial if they showed engagement.',
+    'This user\'s trial ended but your app received no conversion or cancellation event. They may be in limbo — neither paying nor explicitly churned. Review whether they intended to convert, and consider a targeted follow-up if they showed engagement during the trial.',
   // Backend detector IDs
   unrevoked_refund:
-    'A refund was processed but the user\'s access was not revoked. Update the user\'s entitlement state to "refunded" and revoke access immediately.',
+    'A refund was processed in your billing provider, but your app still grants this user access. Your backend needs to listen for refund events (e.g., Stripe\'s charge.refunded webhook) and revoke the user\'s access when one is received. Update this user\'s access immediately.',
   duplicate_billing:
-    'This user is paying on multiple platforms simultaneously. Cancel the duplicate subscription and issue a prorated refund for the overlap period.',
+    'This user has active paid subscriptions on multiple platforms (e.g., both Stripe and Apple) for the same product — they\'re being charged twice. Cancel the duplicate on the platform they\'re not actively using and issue a prorated refund for the overlap.',
   cross_platform_conflict:
-    'The user\'s subscription state differs between platforms. Review both platform dashboards to determine the correct state and reconcile.',
+    'This user\'s subscription status differs between billing platforms — for example, active in Stripe but expired in Apple. Your app may be showing inconsistent behavior depending on which platform it checks. Compare both dashboards to find the correct status and update the out-of-sync platform.',
   renewal_anomaly:
-    'Renewal rates dropped significantly vs baseline. Investigate whether this correlates with a pricing change, payment method expiry cohort, or billing provider issue.',
+    'The rate of successful subscription renewals dropped significantly compared to your recent average. This often signals a wave of expired payment methods, a pricing change impact, or a billing provider issue. Review failed payment logs in your provider dashboard to identify the pattern.',
   data_freshness:
-    'Review stale subscriptions and trigger a data re-sync with the billing provider. These accounts may have churned silently or have broken webhook delivery.',
+    'A significant number of active subscriptions haven\'t generated any billing events recently. This usually means webhooks are being lost — your billing provider is sending them, but your server isn\'t receiving or processing them. Check your webhook endpoint health and trigger a data re-sync from the provider\'s API.',
 };
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {

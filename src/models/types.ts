@@ -135,7 +135,7 @@ export interface DetectedIssue {
 
 // ─── Alert types ────────────────────────────────────────────────────
 
-export type AlertChannel = 'slack' | 'email';
+export type AlertChannel = 'slack' | 'email' | 'webhook';
 
 export interface SlackAlertConfig {
   webhookUrl: string;
@@ -146,4 +146,22 @@ export interface EmailAlertConfig {
   recipients: string[];
 }
 
-export type AlertConfig = SlackAlertConfig | EmailAlertConfig;
+export interface WebhookAlertConfig {
+  url: string;
+  signingSecret: string;
+  eventTypes?: WebhookEventType[];
+}
+
+export type WebhookEventType = 'issue.created' | 'issue.resolved' | 'issue.dismissed' | 'issue.acknowledged';
+
+export interface WebhookPayload {
+  id: string;
+  eventType: WebhookEventType;
+  timestamp: string;
+  apiVersion: string;
+  data: {
+    issue: Record<string, unknown>;
+  };
+}
+
+export type AlertConfig = SlackAlertConfig | EmailAlertConfig | WebhookAlertConfig;

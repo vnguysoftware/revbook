@@ -16,7 +16,7 @@ import { canonicalEvents, billingConnections } from '../../models/schema.js';
 export const renewalAnomalyDetector: IssueDetector = {
   id: 'renewal_anomaly',
   name: 'Unusual Renewal Pattern',
-  description: 'The rate of successful renewals has dropped significantly compared to the rolling average for a billing source',
+  description: 'The rate of successful subscription renewals has dropped significantly compared to your recent average. This often signals a wave of expired payment methods, a pricing change impact, or an issue with your billing provider.',
 
   async checkEvent() {
     // Aggregate detector — scheduled scan only

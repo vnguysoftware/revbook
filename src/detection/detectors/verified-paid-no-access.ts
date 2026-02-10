@@ -14,7 +14,7 @@ import { hasAccessCheckData } from '../tier.js';
 export const verifiedPaidNoAccessDetector: IssueDetector = {
   id: 'verified_paid_no_access',
   name: 'Paid But No Access',
-  description: 'A paying customer has been confirmed by your app as not having access. This is verified via your app integration.',
+  description: 'A paying customer has been confirmed as unable to access the product they\'re paying for. This was verified by your app\'s access-check integration — the user has a successful payment but your app is not granting them access.',
 
   async checkEvent() {
     // Tier 2 detectors only run on scheduled scans

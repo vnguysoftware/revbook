@@ -16,7 +16,7 @@ import { entitlements } from '../../models/schema.js';
 export const crossPlatformMismatchDetector: IssueDetector = {
   id: 'cross_platform_mismatch',
   name: 'Cross-Platform State Mismatch',
-  description: 'User has conflicting entitlement states across billing platforms',
+  description: 'This user\'s subscription status differs between billing platforms. Your app may show inconsistent behavior depending on which platform it checks for subscription validity.',
 
   async checkEvent(db, orgId, userId, event) {
     // Check after any state-changing event
@@ -70,7 +70,7 @@ async function checkUser(
 
       issues.push({
         issueType: 'cross_platform_mismatch',
-        severity: 'critical',
+        severity: 'warning',
         title: `${activeEnt.source} says active, ${inactiveEnt.source} says ${inactiveEnt.state}`,
         description: `User has conflicting subscription states: ${activeEnt.source} shows "${activeEnt.state}" but ${inactiveEnt.source} shows "${inactiveEnt.state}" for the same product.`,
         userId,

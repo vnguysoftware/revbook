@@ -63,7 +63,7 @@ describe('VerifiedAccessNoPaymentDetector', () => {
 
       expect(issues).toHaveLength(1);
       expect(issues[0].issueType).toBe('verified_access_no_payment');
-      expect(issues[0].severity).toBe('critical');
+      expect(issues[0].severity).toBe('warning');
       expect(issues[0].confidence).toBe(0.95);
       expect(issues[0].detectionTier).toBe('app_verified');
     });

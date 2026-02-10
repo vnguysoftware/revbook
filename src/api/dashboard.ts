@@ -3,6 +3,7 @@ import { eq, and, desc, gte, sql, count, sum } from 'drizzle-orm';
 import type { Database } from '../config/database.js';
 import { canonicalEvents, issues, entitlements, users } from '../models/schema.js';
 import type { AuthContext } from '../middleware/auth.js';
+import { requireScope } from '../middleware/require-scope.js';
 
 /**
  * Dashboard API — aggregate views for the main dashboard.
@@ -19,7 +20,7 @@ export function createDashboardRoutes(db: Database) {
   // ─── Revenue Impact View ────────────────────────────────────────────
   // "You're losing $X/month" — the killer feature for enterprise sales.
 
-  app.get('/revenue-impact', async (c) => {
+  app.get('/revenue-impact', requireScope('dashboard:read'), async (c) => {
     const { orgId } = c.get('auth');
 
     // Total revenue at risk from open issues
@@ -86,7 +87,7 @@ export function createDashboardRoutes(db: Database) {
 
   // ─── Event Feed (real-time stream) ──────────────────────────────────
 
-  app.get('/events', async (c) => {
+  app.get('/events', requireScope('dashboard:read'), async (c) => {
     const { orgId } = c.get('auth');
     const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200);
     const source = c.req.query('source');
@@ -126,7 +127,7 @@ export function createDashboardRoutes(db: Database) {
 
   // ─── Entitlement Health Overview ────────────────────────────────────
 
-  app.get('/entitlement-health', async (c) => {
+  app.get('/entitlement-health', requireScope('dashboard:read'), async (c) => {
     const { orgId } = c.get('auth');
 
     const byState = await db
@@ -162,7 +163,7 @@ export function createDashboardRoutes(db: Database) {
 
   // ─── Trend Data (for charts) ────────────────────────────────────────
 
-  app.get('/trends/issues', async (c) => {
+  app.get('/trends/issues', requireScope('dashboard:read'), async (c) => {
     const { orgId } = c.get('auth');
     const days = Math.min(parseInt(c.req.query('days') || '30'), 90);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -187,7 +188,7 @@ export function createDashboardRoutes(db: Database) {
     return c.json({ trend, days });
   });
 
-  app.get('/trends/events', async (c) => {
+  app.get('/trends/events', requireScope('dashboard:read'), async (c) => {
     const { orgId } = c.get('auth');
     const days = Math.min(parseInt(c.req.query('days') || '30'), 90);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);

@@ -6,6 +6,7 @@ import type { AuthContext } from '../middleware/auth.js';
 import { accessChecks, products } from '../models/schema.js';
 import { IdentityResolver } from '../identity/resolver.js';
 import { createChildLogger } from '../config/logger.js';
+import { requireScope } from '../middleware/require-scope.js';
 
 const log = createChildLogger('access-checks');
 
@@ -23,7 +24,7 @@ export function createAccessCheckRoutes(db: Database) {
   const resolver = new IdentityResolver(db);
 
   // POST / — Report a single access check
-  app.post('/', async (c) => {
+  app.post('/', requireScope('access-checks:write'), async (c) => {
     const { orgId } = c.get('auth');
     const body = await c.req.json();
     const parsed = accessCheckSchema.safeParse(body);
@@ -68,7 +69,7 @@ export function createAccessCheckRoutes(db: Database) {
   });
 
   // POST /test — Validate payload without storing
-  app.post('/test', async (c) => {
+  app.post('/test', requireScope('access-checks:write'), async (c) => {
     const { orgId } = c.get('auth');
     const body = await c.req.json();
     const parsed = accessCheckSchema.safeParse(body);
@@ -89,7 +90,7 @@ export function createAccessCheckRoutes(db: Database) {
   });
 
   // POST /batch — Array of up to 100 checks
-  app.post('/batch', async (c) => {
+  app.post('/batch', requireScope('access-checks:write'), async (c) => {
     const { orgId } = c.get('auth');
     const body = await c.req.json();
     const parsed = batchSchema.safeParse(body);
@@ -138,7 +139,7 @@ export function createAccessCheckRoutes(db: Database) {
   });
 
   // GET / — List recent access checks
-  app.get('/', async (c) => {
+  app.get('/', requireScope('access-checks:read'), async (c) => {
     const { orgId } = c.get('auth');
     const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
 
@@ -153,7 +154,7 @@ export function createAccessCheckRoutes(db: Database) {
   });
 
   // GET /stats — Access check statistics for the org
-  app.get('/stats', async (c) => {
+  app.get('/stats', requireScope('access-checks:read'), async (c) => {
     const { orgId } = c.get('auth');
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 

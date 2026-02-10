@@ -9,6 +9,7 @@ import {
   billingConnections,
 } from '../models/schema.js';
 import type { AuthContext } from '../middleware/auth.js';
+import { requireScope } from '../middleware/require-scope.js';
 import { createChildLogger } from '../config/logger.js';
 
 const log = createChildLogger('first-look');
@@ -32,7 +33,7 @@ const log = createChildLogger('first-look');
 export function createFirstLookRoutes(db: Database) {
   const app = new Hono<{ Variables: { auth: AuthContext } }>();
 
-  app.get('/', async (c) => {
+  app.get('/', requireScope('dashboard:read'), async (c) => {
     const { orgId } = c.get('auth');
 
     // Run all queries in parallel for speed

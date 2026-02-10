@@ -4,10 +4,14 @@ import { z } from 'zod';
 import type { Database } from '../config/database.js';
 import { alertConfigurations, alertDeliveryLogs } from '../models/schema.js';
 import type { AuthContext } from '../middleware/auth.js';
-import type { SlackAlertConfig, EmailAlertConfig } from '../models/types.js';
+import type { SlackAlertConfig, EmailAlertConfig, WebhookAlertConfig } from '../models/types.js';
 import { sendSlackTestAlert } from '../alerts/slack.js';
 import { sendEmailTestAlert } from '../alerts/email.js';
+import { sendWebhookTestAlert } from '../alerts/webhook.js';
+import { generateSigningSecret } from '../alerts/webhook-signing.js';
 import { createChildLogger } from '../config/logger.js';
+import { requireScope } from '../middleware/require-scope.js';
+import { auditLog } from '../security/audit.js';
 
 const log = createChildLogger('alerts-api');
 
@@ -22,15 +26,21 @@ const emailConfigSchema = z.object({
   recipients: z.array(z.string().email()).min(1).max(50),
 });
 
+const webhookConfigSchema = z.object({
+  url: z.string().url(),
+  eventTypes: z.array(z.enum(['issue.created', 'issue.resolved', 'issue.dismissed', 'issue.acknowledged'])).optional(),
+});
+
 const severityFilterSchema = z.array(
   z.enum(['critical', 'warning', 'info']),
 ).min(1);
 
 const createAlertSchema = z.object({
-  channel: z.enum(['slack', 'email']),
+  channel: z.enum(['slack', 'email', 'webhook']),
   config: z.union([
     slackConfigSchema,
     emailConfigSchema,
+    webhookConfigSchema,
   ]),
   severityFilter: severityFilterSchema.default(['critical', 'warning', 'info']),
   issueTypes: z.array(z.string()).nullable().default(null),
@@ -38,10 +48,14 @@ const createAlertSchema = z.object({
 });
 
 const updateAlertSchema = z.object({
-  config: z.union([slackConfigSchema, emailConfigSchema]).optional(),
+  config: z.union([slackConfigSchema, emailConfigSchema, webhookConfigSchema]).optional(),
   severityFilter: severityFilterSchema.optional(),
   issueTypes: z.array(z.string()).nullable().optional(),
   enabled: z.boolean().optional(),
+});
+
+const testAlertSchema = z.object({
+  alertConfigId: z.string().uuid('alertConfigId must be a valid UUID'),
 });
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -66,6 +80,14 @@ function sanitizeConfig(channel: string, config: unknown): unknown {
       channelName: slackConfig.channelName || null,
     };
   }
+  if (channel === 'webhook') {
+    const webhookConfig = config as WebhookAlertConfig;
+    return {
+      url: webhookConfig.url,
+      signingSecret: '***',
+      eventTypes: webhookConfig.eventTypes || null,
+    };
+  }
   // Email config is safe to return as-is
   return config;
 }
@@ -77,7 +99,7 @@ export function createAlertRoutes(db: Database) {
 
   // ─── Create alert configuration ────────────────────────────────
 
-  app.post('/', async (c) => {
+  app.post('/', requireScope('alerts:write'), async (c) => {
     const { orgId } = c.get('auth');
     const body = await c.req.json();
 
@@ -108,6 +130,22 @@ export function createAlertRoutes(db: Database) {
           details: check.error.flatten().fieldErrors,
         }, 400);
       }
+    } else if (data.channel === 'webhook') {
+      const check = webhookConfigSchema.safeParse(data.config);
+      if (!check.success) {
+        return c.json({
+          error: 'Invalid webhook configuration. Provide a valid url.',
+          details: check.error.flatten().fieldErrors,
+        }, 400);
+      }
+    }
+
+    // Auto-generate signing secret for webhook configs
+    let configToStore = data.config;
+    let signingSecret: string | undefined;
+    if (data.channel === 'webhook') {
+      signingSecret = generateSigningSecret();
+      configToStore = { ...data.config, signingSecret } as any;
     }
 
     const [created] = await db
@@ -115,7 +153,7 @@ export function createAlertRoutes(db: Database) {
       .values({
         orgId,
         channel: data.channel,
-        config: data.config,
+        config: configToStore,
         severityFilter: data.severityFilter,
         issueTypes: data.issueTypes,
         enabled: data.enabled,
@@ -123,18 +161,24 @@ export function createAlertRoutes(db: Database) {
       .returning();
 
     log.info({ orgId, configId: created.id, channel: data.channel }, 'Alert configuration created');
+    auditLog(db, c.get('auth'), 'alert.created', 'alert_configuration', created.id, { channel: data.channel });
+
+    // For webhooks, return the signing secret once (only on creation)
+    const responseConfig = data.channel === 'webhook'
+      ? { ...(sanitizeConfig(created.channel, created.config) as any), signingSecret }
+      : sanitizeConfig(created.channel, created.config);
 
     return c.json({
       alertConfig: {
         ...created,
-        config: sanitizeConfig(created.channel, created.config),
+        config: responseConfig,
       },
     }, 201);
   });
 
   // ─── List alert configurations ─────────────────────────────────
 
-  app.get('/', async (c) => {
+  app.get('/', requireScope('alerts:read'), async (c) => {
     const { orgId } = c.get('auth');
 
     const configs = await db
@@ -153,7 +197,7 @@ export function createAlertRoutes(db: Database) {
 
   // ─── Update alert configuration ────────────────────────────────
 
-  app.put('/:id', async (c) => {
+  app.put('/:id', requireScope('alerts:write'), async (c) => {
     const { orgId } = c.get('auth');
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -200,6 +244,17 @@ export function createAlertRoutes(db: Database) {
             details: check.error.flatten().fieldErrors,
           }, 400);
         }
+      } else if (existing.channel === 'webhook') {
+        const check = webhookConfigSchema.safeParse(parsed.data.config);
+        if (!check.success) {
+          return c.json({
+            error: 'Invalid webhook configuration',
+            details: check.error.flatten().fieldErrors,
+          }, 400);
+        }
+        // Preserve the existing signing secret
+        const existingConfig = existing.config as unknown as WebhookAlertConfig;
+        parsed.data.config = { ...parsed.data.config, signingSecret: existingConfig.signingSecret } as any;
       }
     }
 
@@ -221,6 +276,7 @@ export function createAlertRoutes(db: Database) {
       .returning();
 
     log.info({ orgId, configId: id }, 'Alert configuration updated');
+    auditLog(db, c.get('auth'), 'alert.updated', 'alert_configuration', id);
 
     return c.json({
       alertConfig: {
@@ -232,7 +288,7 @@ export function createAlertRoutes(db: Database) {
 
   // ─── Delete alert configuration ────────────────────────────────
 
-  app.delete('/:id', async (c) => {
+  app.delete('/:id', requireScope('alerts:write'), async (c) => {
     const { orgId } = c.get('auth');
     const id = c.req.param('id');
 
@@ -266,20 +322,23 @@ export function createAlertRoutes(db: Database) {
       );
 
     log.info({ orgId, configId: id }, 'Alert configuration deleted');
+    auditLog(db, c.get('auth'), 'alert.deleted', 'alert_configuration', id);
 
     return c.json({ ok: true });
   });
 
   // ─── Test alert ────────────────────────────────────────────────
 
-  app.post('/test', async (c) => {
+  app.post('/test', requireScope('alerts:write'), async (c) => {
     const { orgId } = c.get('auth');
     const body = await c.req.json();
-    const { alertConfigId } = body;
 
-    if (!alertConfigId) {
-      return c.json({ error: 'alertConfigId is required' }, 400);
+    const parsed = testAlertSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request body', details: parsed.error.flatten().fieldErrors }, 400);
     }
+
+    const { alertConfigId } = parsed.data;
 
     const [config] = await db
       .select()
@@ -309,6 +368,11 @@ export function createAlertRoutes(db: Database) {
         result = await sendEmailTestAlert(emailConfig.recipients);
         break;
       }
+      case 'webhook': {
+        const webhookConfig = config.config as unknown as WebhookAlertConfig;
+        result = await sendWebhookTestAlert(webhookConfig);
+        break;
+      }
       default:
         return c.json({ error: `Unknown channel: ${config.channel}` }, 400);
     }
@@ -334,9 +398,38 @@ export function createAlertRoutes(db: Database) {
     }
   });
 
+  // ─── Reveal signing secret (one-time) ────────────────────────
+
+  app.get('/:id/signing-secret', requireScope('alerts:read'), async (c) => {
+    const { orgId } = c.get('auth');
+    const id = c.req.param('id');
+
+    const [config] = await db
+      .select()
+      .from(alertConfigurations)
+      .where(
+        and(
+          eq(alertConfigurations.id, id),
+          eq(alertConfigurations.orgId, orgId),
+        ),
+      )
+      .limit(1);
+
+    if (!config) {
+      return c.json({ error: 'Alert configuration not found' }, 404);
+    }
+
+    if (config.channel !== 'webhook') {
+      return c.json({ error: 'Signing secret is only available for webhook configurations' }, 400);
+    }
+
+    const webhookConfig = config.config as unknown as WebhookAlertConfig;
+    return c.json({ signingSecret: webhookConfig.signingSecret });
+  });
+
   // ─── Delivery history ─────────────────────────────────────────
 
-  app.get('/history', async (c) => {
+  app.get('/history', requireScope('alerts:read'), async (c) => {
     const { orgId } = c.get('auth');
     const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 

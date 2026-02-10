@@ -17,7 +17,7 @@ import { entitlements } from '../../models/schema.js';
 export const duplicateBillingDetector: IssueDetector = {
   id: 'duplicate_billing',
   name: 'Duplicate Cross-Platform Billing',
-  description: 'Same user has active paid subscriptions on multiple billing platforms for the same product',
+  description: 'This user has active paid subscriptions on multiple platforms (e.g., both Stripe and Apple) for the same product. They\'re being charged twice and likely don\'t know it.',
 
   async checkEvent(db, orgId, userId, event) {
     return checkUser(db, orgId, userId);

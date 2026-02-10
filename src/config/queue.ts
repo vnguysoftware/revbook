@@ -11,6 +11,8 @@ export const QUEUE_NAMES = {
   SCHEDULED_SCANS: 'scheduled-scans',
   BACKFILL_IMPORT: 'backfill-import',
   AI_INVESTIGATION: 'ai-investigation',
+  WEBHOOK_DELIVERY: 'webhook-delivery',
+  DATA_RETENTION: 'data-retention',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];

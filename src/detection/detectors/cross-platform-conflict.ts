@@ -17,7 +17,7 @@ import { entitlements } from '../../models/schema.js';
 export const crossPlatformConflictDetector: IssueDetector = {
   id: 'cross_platform_conflict',
   name: 'Cross-Platform State Conflict',
-  description: 'User has conflicting entitlement states across billing platforms (e.g., active on one, expired on another)',
+  description: 'This user\'s subscription status differs between billing platforms — for example, their Stripe subscription is active but their Apple subscription shows as expired. This means your app may grant or deny access inconsistently depending on which platform it checks.',
 
   async checkEvent(db, orgId, userId, event) {
     return checkUser(db, orgId, userId);

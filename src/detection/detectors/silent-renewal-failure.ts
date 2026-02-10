@@ -18,7 +18,7 @@ import { entitlements, canonicalEvents } from '../../models/schema.js';
 export const silentRenewalFailureDetector: IssueDetector = {
   id: 'silent_renewal_failure',
   name: 'Silent Renewal Failure',
-  description: 'Expected renewal event never arrived after billing period ended',
+  description: 'This subscription\'s billing period ended but no renewal event was received from your billing provider. The payment may have failed without your app being notified, or the renewal webhook was lost.',
 
   async checkEvent() {
     // This detector only runs as a scheduled scan

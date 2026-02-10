@@ -49,7 +49,7 @@ describe('CrossPlatformMismatchDetector', () => {
 
       expect(issues.some(i => i.issueType === 'cross_platform_mismatch')).toBe(true);
       const mismatch = issues.find(i => i.issueType === 'cross_platform_mismatch')!;
-      expect(mismatch.severity).toBe('critical');
+      expect(mismatch.severity).toBe('warning');
       expect(mismatch.confidence).toBe(0.85);
       expect(mismatch.userId).toBe(userId);
     });

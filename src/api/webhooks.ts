@@ -7,6 +7,7 @@ import { enqueueWebhookJob } from '../queue/webhook-worker.js';
 import { AppleWebhookProxy } from '../ingestion/proxy/apple-proxy.js';
 import type { BillingSource, RawWebhookEvent } from '../models/types.js';
 import { createChildLogger } from '../config/logger.js';
+import { sanitizeHeaders } from '../security/sanitize.js';
 
 const log = createChildLogger('webhook-api');
 
@@ -109,7 +110,7 @@ export function createWebhookRoutes(db: Database) {
         .values({
           orgId: org.id,
           source,
-          rawHeaders: headers,
+          rawHeaders: sanitizeHeaders(headers),
           rawBody,
           processingStatus: 'queued',
         })

@@ -6,6 +6,7 @@ import { getNormalizer } from './normalizer/base.js';
 import { IdentityResolver } from '../identity/resolver.js';
 import { EntitlementEngine } from '../entitlement/engine.js';
 import { IssueDetectionEngine } from '../detection/engine.js';
+import { sanitizePayload } from '../security/sanitize.js';
 import { createChildLogger } from '../config/logger.js';
 
 const log = createChildLogger('ingestion-pipeline');
@@ -220,7 +221,7 @@ export class IngestionPipeline {
         planTier: event.planTier,
         trialStartedAt: event.trialStartedAt,
         idempotencyKey: event.idempotencyKey,
-        rawPayload: event.rawPayload,
+        rawPayload: sanitizePayload(event.source, event.rawPayload),
         processedAt: new Date(),
       })
       .onConflictDoNothing({ target: canonicalEvents.idempotencyKey })

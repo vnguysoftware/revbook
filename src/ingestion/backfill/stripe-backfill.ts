@@ -5,9 +5,18 @@ import type { Database } from '../../config/database.js';
 import { billingConnections, organizations } from '../../models/schema.js';
 import { IngestionPipeline } from '../pipeline.js';
 import type { RawWebhookEvent } from '../../models/types.js';
+import { readCredentials } from '../../security/credentials.js';
 import { createChildLogger } from '../../config/logger.js';
+import { CircuitBreaker } from '../../security/circuit-breaker.js';
 
 const log = createChildLogger('stripe-backfill');
+
+/** Circuit breaker for Stripe API calls during backfill. */
+const stripeBackfillBreaker = new CircuitBreaker('stripe-backfill-api', {
+  failureThreshold: 5,
+  resetTimeoutMs: 60_000,
+  halfOpenMaxAttempts: 3,
+});
 
 /**
  * Stripe Historical Backfill
@@ -200,7 +209,7 @@ export class StripeBackfill {
         throw new Error('Stripe not connected');
       }
 
-      const creds = conn.credentials as { apiKey: string };
+      const creds = readCredentials<{ apiKey: string }>(conn.credentials);
       const stripe = new Stripe(creds.apiKey);
 
       try {
@@ -209,7 +218,7 @@ export class StripeBackfill {
         let totalSubs = 0;
         try {
           // Use a quick count query
-          const countResult = await stripe.subscriptions.list({ limit: 1, status: 'all' });
+          const countResult = await stripeBackfillBreaker.execute(() => stripe.subscriptions.list({ limit: 1, status: 'all' }));
           // Stripe doesn't give total_count, so we estimate from has_more
           // For accurate count, we'd need to paginate. Use a fast estimate instead.
           totalSubs = countResult.data.length;
@@ -314,7 +323,7 @@ export class StripeBackfill {
       };
       if (startingAfter) params.starting_after = startingAfter;
 
-      const subs = await stripe.subscriptions.list(params);
+      const subs = await stripeBackfillBreaker.execute(() => stripe.subscriptions.list(params));
 
       for (const sub of subs.data) {
         try {
@@ -398,7 +407,7 @@ export class StripeBackfill {
       };
       if (startingAfter) params.starting_after = startingAfter;
 
-      const events = await stripe.events.list(params);
+      const events = await stripeBackfillBreaker.execute(() => stripe.events.list(params));
 
       for (const event of events.data) {
         try {

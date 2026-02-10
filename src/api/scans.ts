@@ -1,12 +1,21 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import type { Database } from '../config/database.js';
 import type { AuthContext } from '../middleware/auth.js';
 import { triggerScanNow, getScanSchedules } from '../queue/scan-scheduler.js';
 import { getQueue, QUEUE_NAMES } from '../config/queue.js';
 import { IssueDetectionEngine } from '../detection/engine.js';
 import { createChildLogger } from '../config/logger.js';
+import { requireScope } from '../middleware/require-scope.js';
+import { auditLog } from '../security/audit.js';
 
 const log = createChildLogger('scan-api');
+
+// ─── Validation Schemas ────────────────────────────────────────────
+
+const triggerScanSchema = z.object({
+  detectorId: z.string().max(100).optional(),
+});
 
 /**
  * Scan management API routes.
@@ -20,17 +29,22 @@ export function createScanRoutes(db: Database) {
   const app = new Hono<{ Variables: { auth: AuthContext } }>();
 
   // ── POST /trigger — Trigger a scan immediately ──────────────────────
-  app.post('/trigger', async (c) => {
+  app.post('/trigger', requireScope('admin:write'), async (c) => {
     const { orgId } = c.get('auth');
 
-    let body: { detectorId?: string };
+    let body: unknown;
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const detectorId = body.detectorId || 'all';
+    const parsed = triggerScanSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request body', details: parsed.error.flatten().fieldErrors }, 400);
+    }
+
+    const detectorId = parsed.data.detectorId || 'all';
 
     // Validate detector exists if a specific one was requested
     if (detectorId !== 'all') {
@@ -57,6 +71,7 @@ export function createScanRoutes(db: Database) {
       const jobId = await triggerScanNow(detectorId, orgId);
 
       log.info({ orgId, detectorId, jobId }, 'Manual scan triggered via API');
+      auditLog(db, c.get('auth'), 'scan.triggered', 'scan', jobId, { detectorId });
 
       return c.json({
         ok: true,
@@ -75,7 +90,7 @@ export function createScanRoutes(db: Database) {
   });
 
   // ── GET /history — Recent scan results ──────────────────────────────
-  app.get('/history', async (c) => {
+  app.get('/history', requireScope('admin:read'), async (c) => {
     const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200);
 
     try {
@@ -163,7 +178,7 @@ export function createScanRoutes(db: Database) {
   });
 
   // ── GET /schedules — List all configured scan schedules ─────────────
-  app.get('/schedules', async (c) => {
+  app.get('/schedules', requireScope('admin:read'), async (c) => {
     const schedules = getScanSchedules();
 
     // Also get info about available detectors with scheduled scans

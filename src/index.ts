@@ -13,6 +13,7 @@ import { createDashboardRoutes } from './api/dashboard.js';
 import { createOnboardingRoutes } from './api/onboarding.js';
 import { createAlertRoutes } from './api/alerts.js';
 import { createAccessCheckRoutes } from './api/access-checks.js';
+import { createDataManagementRoutes } from './api/data-management.js';
 import { createFirstLookRoutes } from './api/first-look.js';
 import { createDlqRoutes } from './queue/dlq.js';
 import { createQueueMonitorRoutes } from './queue/monitor.js';
@@ -26,6 +27,12 @@ import { registerNormalizer } from './ingestion/normalizer/base.js';
 import { StripeNormalizer } from './ingestion/providers/stripe.js';
 import { AppleNormalizer } from './ingestion/providers/apple.js';
 import { createSlackRoutes, isSlackEnabled } from './slack/index.js';
+import { createMcpRoutes } from './mcp/transport.js';
+import { startWebhookDeliveryWorker } from './queue/webhook-delivery-worker.js';
+import { rateLimit } from './middleware/rate-limit.js';
+import { startRetentionWorker, startRetentionScheduler } from './queue/retention-worker.js';
+import { createHealthRoutes } from './api/health.js';
+import { createCircuitBreakerRoutes } from './api/admin-circuit-breakers.js';
 
 const log = createChildLogger('server');
 
@@ -39,6 +46,7 @@ registerNormalizer(new AppleNormalizer());
 
 // Start queue workers
 startWebhookWorker();
+startWebhookDeliveryWorker();
 
 // Start scan worker and scheduler (respects ENABLE_SCHEDULED_SCANS env var)
 const enableScans = process.env.ENABLE_SCHEDULED_SCANS !== 'false';
@@ -53,6 +61,12 @@ if (enableScans) {
 
 // Start AI investigation worker (only if ANTHROPIC_API_KEY is set)
 startAiWorker();
+
+// Start data retention worker and scheduler
+startRetentionWorker();
+startRetentionScheduler().catch((err) => {
+  log.error({ err }, 'Failed to start retention scheduler');
+});
 
 // ─── App Setup ───────────────────────────────────────────────────────
 
@@ -74,15 +88,19 @@ app.use('*', async (c, next) => {
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('Permissions-Policy', 'microphone=(), camera=(), payment=()');
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 });
 
-// Health check (no auth)
-app.get('/health', (c) => c.json({ status: 'ok', version: '0.1.0' }));
+// Health check and readiness probe (no auth)
+const healthRoutes = createHealthRoutes(db);
+app.route('/', healthRoutes);
 
 // Webhook endpoints (no API key auth — use provider signature verification)
+app.use('/webhooks/*', rateLimit('webhook'));
 app.route('/webhooks', createWebhookRoutes(db));
 
 // Setup/onboarding (some endpoints need auth, org creation doesn't)
+app.use('/setup/*', rateLimit('public'));
 const onboarding = createOnboardingRoutes(db);
 app.route('/setup', onboarding);
 
@@ -91,6 +109,7 @@ const auth = createAuthMiddleware(db);
 
 const api = new Hono();
 api.use('*', auth);
+api.use('*', rateLimit('api'));
 // AI routes mounted first so /issues/incidents and /issues/:id/investigation
 // are matched before the generic /issues/:issueId wildcard in issue routes.
 api.route('/', createAiRoutes(db));
@@ -100,13 +119,22 @@ api.route('/dashboard', createDashboardRoutes(db));
 api.route('/first-look', createFirstLookRoutes(db));
 api.route('/alerts', createAlertRoutes(db));
 api.route('/access-checks', createAccessCheckRoutes(db));
+api.route('/data-management', createDataManagementRoutes(db));
 
 // Admin routes (also authenticated)
 api.route('/admin/dlq', createDlqRoutes());
 api.route('/admin/queues', createQueueMonitorRoutes());
 api.route('/admin/scans', createScanRoutes(db));
+api.route('/admin/circuit-breakers', createCircuitBreakerRoutes());
 
 app.route('/api/v1', api);
+
+// MCP Server (authenticated via API key)
+const mcpApp = new Hono();
+mcpApp.use('*', auth);
+mcpApp.route('/', createMcpRoutes(db));
+app.route('/mcp', mcpApp);
+log.info('MCP server routes mounted at /mcp');
 
 // Slack CX Bot (only if configured)
 if (isSlackEnabled()) {

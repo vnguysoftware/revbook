@@ -14,7 +14,7 @@ import { hasAccessCheckData } from '../tier.js';
 export const verifiedAccessNoPaymentDetector: IssueDetector = {
   id: 'verified_access_no_payment',
   name: 'Access Without Payment',
-  description: 'A user has been confirmed by your app as having access despite no active subscription. This is verified via your app integration.',
+  description: 'A user has been confirmed as having access to the product without an active paid subscription. This was verified by your app\'s access-check integration — they can use the product but aren\'t being charged.',
 
   async checkEvent() {
     // Tier 2 detectors only run on scheduled scans
@@ -69,7 +69,7 @@ export const verifiedAccessNoPaymentDetector: IssueDetector = {
       if (!hasActiveEntitlement) {
         issues.push({
           issueType: 'verified_access_no_payment',
-          severity: 'critical',
+          severity: 'warning',
           title: 'User has access without active subscription',
           description: `Your app reported hasAccess=true for this user at ${check.reportedAt.toISOString()}, but their subscription is ${userEnts.length > 0 ? userEnts.map(e => e.state).join(', ') : 'not found'}. They may be accessing the product without paying.`,
           userId: check.userId,

@@ -24,7 +24,7 @@ import { billingConnections } from '../../models/schema.js';
 export const webhookGapDetector: IssueDetector = {
   id: 'webhook_delivery_gap',
   name: 'Webhook Delivery Gap',
-  description: 'No webhooks received from a billing source in an unexpectedly long time',
+  description: 'Your billing provider has stopped sending event notifications (webhooks) to your server. Without webhooks, your app won\'t know about new payments, cancellations, or refunds — so your records may be getting out of date.',
 
   async checkEvent() {
     // This is a scheduled-only detector

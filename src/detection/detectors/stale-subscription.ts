@@ -21,7 +21,7 @@ import { desc } from 'drizzle-orm';
 export const staleSubscriptionDetector: IssueDetector = {
   id: 'stale_subscription',
   name: 'Stale Subscription',
-  description: 'Subscription has no recent events relative to its billing period, indicating missed events or stale data',
+  description: 'This subscription hasn\'t generated any billing events (payments, renewals, cancellations) relative to its expected billing cycle. Your records may be stale — the actual status in your billing provider\'s system could be different.',
 
   async checkEvent() {
     // This detector only runs as a scheduled scan

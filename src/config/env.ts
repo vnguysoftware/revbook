@@ -40,6 +40,10 @@ const envSchema = z.object({
   SLACK_CX_CHANNEL_ID: z.string().optional(),
   SLACK_CX_USER_IDS: z.string().optional(), // comma-separated Slack user IDs
 
+  // ─── Credential Encryption ──────────────────────────────────────────
+  CREDENTIAL_ENCRYPTION_KEY: z.string().length(64).optional(),
+  CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: z.string().length(64).optional(),
+
   // ─── Scheduled Scans ──────────────────────────────────────────────
   ENABLE_SCHEDULED_SCANS: z.enum(['true', 'false']).default('true'),
 });

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
+import { z } from 'zod';
 import type { Database } from '../config/database.js';
 import { issues } from '../models/schema.js';
 import type { AuthContext } from '../middleware/auth.js';
@@ -10,8 +11,17 @@ import { generateInsights } from '../agents/insights.js';
 import { recordFeedback, getDetectorHealthMetrics } from '../agents/learner.js';
 import { enqueueInvestigation } from '../agents/worker.js';
 import { createChildLogger } from '../config/logger.js';
+import { requireScope } from '../middleware/require-scope.js';
 
 const log = createChildLogger('api-ai');
+
+// ─── Validation Schemas ────────────────────────────────────────────
+
+const feedbackSchema = z.object({
+  wasRealIssue: z.boolean(),
+  actualCause: z.string().max(2000).optional(),
+  notes: z.string().max(5000).optional(),
+});
 
 const AI_UNAVAILABLE_MSG =
   'AI investigation is not currently enabled for this account';
@@ -32,7 +42,7 @@ export function createAiRoutes(db: Database) {
   // If the investigation hasn't been generated yet, enqueues it via BullMQ
   // and returns a 202 with a polling hint.
 
-  app.get('/issues/:id/investigation', async (c) => {
+  app.get('/issues/:id/investigation', requireScope('issues:read'), async (c) => {
     const { orgId } = c.get('auth');
     const issueId = c.req.param('id');
 
@@ -105,7 +115,7 @@ export function createAiRoutes(db: Database) {
   // ─── GET /insights ─────────────────────────────────────────────────
   // Returns AI-generated insights for billing health.
 
-  app.get('/insights', async (c) => {
+  app.get('/insights', requireScope('issues:read'), async (c) => {
     const { orgId } = c.get('auth');
     const period = (c.req.query('period') as 'daily' | 'weekly') || 'daily';
 
@@ -128,7 +138,7 @@ export function createAiRoutes(db: Database) {
   // ─── GET /issues/incidents ─────────────────────────────────────────
   // Returns grouped incident clusters from open issues.
 
-  app.get('/issues/incidents', async (c) => {
+  app.get('/issues/incidents', requireScope('issues:read'), async (c) => {
     const { orgId } = c.get('auth');
     const windowHours = parseInt(c.req.query('window') || '4');
     const minSize = parseInt(c.req.query('min_size') || '3');
@@ -153,29 +163,30 @@ export function createAiRoutes(db: Database) {
   // ─── POST /issues/:id/feedback ─────────────────────────────────────
   // Submit resolution feedback (was this a real issue? what was the actual cause?)
 
-  app.post('/issues/:id/feedback', async (c) => {
+  app.post('/issues/:id/feedback', requireScope('issues:write'), async (c) => {
     const { orgId } = c.get('auth');
     const issueId = c.req.param('id');
 
-    let body: any;
+    let body: unknown;
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    if (typeof body.wasRealIssue !== 'boolean') {
-      return c.json({ error: 'wasRealIssue (boolean) is required' }, 400);
+    const parsed = feedbackSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request body', details: parsed.error.flatten().fieldErrors }, 400);
     }
 
     try {
       await recordFeedback(db, orgId, issueId, {
-        wasRealIssue: body.wasRealIssue,
-        actualCause: body.actualCause,
-        notes: body.notes,
+        wasRealIssue: parsed.data.wasRealIssue,
+        actualCause: parsed.data.actualCause,
+        notes: parsed.data.notes,
       });
 
-      return c.json({ ok: true, status: body.wasRealIssue ? 'resolved' : 'dismissed' });
+      return c.json({ ok: true, status: parsed.data.wasRealIssue ? 'resolved' : 'dismissed' });
     } catch (err: any) {
       if (err.message === 'Issue not found') {
         return c.json({ error: 'Issue not found' }, 404);
@@ -188,7 +199,7 @@ export function createAiRoutes(db: Database) {
   // ─── GET /detectors/health ─────────────────────────────────────────
   // Detector accuracy metrics from the learning system.
 
-  app.get('/detectors/health', async (c) => {
+  app.get('/detectors/health', requireScope('issues:read'), async (c) => {
     const { orgId } = c.get('auth');
 
     try {
@@ -203,7 +214,7 @@ export function createAiRoutes(db: Database) {
   // ─── GET /ai/status ────────────────────────────────────────────────
   // Returns the current AI system status and token usage.
 
-  app.get('/ai/status', async (c) => {
+  app.get('/ai/status', requireScope('issues:read'), async (c) => {
     const usage = getTokenUsage();
     return c.json({
       enabled: isAiEnabled(),

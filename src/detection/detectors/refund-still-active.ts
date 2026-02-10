@@ -18,7 +18,7 @@ import { entitlements, canonicalEvents } from '../../models/schema.js';
 export const refundStillActiveDetector: IssueDetector = {
   id: 'unrevoked_refund',
   name: 'Refund Without Access Revocation',
-  description: 'A refund or chargeback was processed but no subsequent access revocation was observed within the grace window',
+  description: 'A refund or chargeback was processed in your billing provider, but your app still grants the user access. Your backend should listen for refund events and revoke access when one is received — this user is getting the product for free after being refunded.',
 
   async checkEvent(db, orgId, userId, event) {
     if (!['refund', 'chargeback'].includes(event.eventType)) {

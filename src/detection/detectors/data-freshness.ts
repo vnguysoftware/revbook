@@ -17,7 +17,7 @@ import { entitlements, billingConnections } from '../../models/schema.js';
 export const dataFreshnessDetector: IssueDetector = {
   id: 'data_freshness',
   name: 'Stale Billing Data',
-  description: 'A significant percentage of active subscriptions have had no billing events in over 35 days, indicating systematic webhook failure',
+  description: 'A significant percentage of active subscriptions have had no billing events in over 35 days. This usually means webhooks from your billing provider are being silently lost — your provider is sending them, but your server isn\'t receiving or processing them.',
 
   async checkEvent() {
     // Aggregate detector — scheduled scan only

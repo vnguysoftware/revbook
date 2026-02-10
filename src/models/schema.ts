@@ -112,7 +112,7 @@ export const billingConnections = pgTable('billing_connections', {
   id: uuid('id').primaryKey().defaultRandom(),
   orgId: uuid('org_id').notNull().references(() => organizations.id),
   source: billingSourceEnum('source').notNull(),
-  credentials: jsonb('credentials').notNull(), // encrypted in practice
+  credentials: jsonb('credentials').notNull(), // encrypted via src/security/credentials.ts
   webhookSecret: varchar('webhook_secret', { length: 512 }),
   isActive: boolean('is_active').default(true).notNull(),
   lastSyncAt: timestamp('last_sync_at'),
@@ -272,7 +272,7 @@ export const issues = pgTable('issues', {
 
 // ─── Alert Configurations ────────────────────────────────────────────
 
-export const alertChannelEnum = pgEnum('alert_channel', ['slack', 'email']);
+export const alertChannelEnum = pgEnum('alert_channel', ['slack', 'email', 'webhook']);
 
 export const alertConfigurations = pgTable('alert_configurations', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -343,4 +343,22 @@ export const accessChecks = pgTable('access_checks', {
   index('access_checks_org_user_idx').on(table.orgId, table.userId),
   index('access_checks_org_reported_idx').on(table.orgId, table.reportedAt),
   index('access_checks_external_user_idx').on(table.orgId, table.externalUserId),
+]);
+
+// ─── Audit Logs ─────────────────────────────────────────────────────
+
+export const auditLogs = pgTable('audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id),
+  actorType: varchar('actor_type', { length: 50 }).notNull(), // 'api_key', 'system', 'user'
+  actorId: varchar('actor_id', { length: 255 }).notNull(),
+  action: varchar('action', { length: 100 }).notNull(),
+  resourceType: varchar('resource_type', { length: 100 }).notNull(),
+  resourceId: varchar('resource_id', { length: 255 }),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('audit_logs_org_idx').on(table.orgId),
+  index('audit_logs_org_action_idx').on(table.orgId, table.action),
+  index('audit_logs_org_created_idx').on(table.orgId, table.createdAt),
 ]);

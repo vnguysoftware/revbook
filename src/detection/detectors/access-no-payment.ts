@@ -13,7 +13,7 @@ import { entitlements, canonicalEvents } from '../../models/schema.js';
 export const accessNoPaymentDetector: IssueDetector = {
   id: 'entitlement_without_payment',
   name: 'Expired Subscription Still Active',
-  description: 'A subscription shows as active despite no recent successful payment. The renewal may have failed silently or a billing event was missed.',
+  description: 'Your app shows this user\'s subscription as active, but no recent payment has been recorded from your billing provider. A renewal payment may have failed without your app being notified, or a billing event was missed by your webhook handler.',
 
   async checkEvent(db, orgId, userId, event) {
     // This is primarily a scheduled scan detector

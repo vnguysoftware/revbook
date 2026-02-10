@@ -97,7 +97,8 @@ describe('Onboarding API', () => {
       });
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toContain('required');
+      expect(body.error).toBe('Invalid request body');
+      expect(body.details.name).toBeDefined();
     });
 
     it('should return 400 when slug is missing', async () => {
@@ -135,7 +136,8 @@ describe('Onboarding API', () => {
       });
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toContain('stripeSecretKey');
+      expect(body.error).toBe('Invalid request body');
+      expect(body.details.stripeSecretKey).toBeDefined();
     });
 
     it('should connect Stripe with valid key', async () => {
@@ -166,7 +168,8 @@ describe('Onboarding API', () => {
       });
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toContain('required');
+      expect(body.error).toBe('Invalid request body');
+      expect(body.details).toBeDefined();
     });
 
     it('should connect Apple with valid credentials', async () => {

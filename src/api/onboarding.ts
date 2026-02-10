@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { eq, and, count, desc, gte, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { randomBytes } from 'crypto';
 import type { Database } from '../config/database.js';
 import {
@@ -16,8 +17,33 @@ import type { AuthContext } from '../middleware/auth.js';
 import { hashApiKey } from '../middleware/auth.js';
 import { StripeBackfill } from '../ingestion/backfill/stripe-backfill.js';
 import { createChildLogger } from '../config/logger.js';
+import { writeCredentials, readCredentials } from '../security/credentials.js';
+import { auditLog } from '../security/audit.js';
 
 const log = createChildLogger('onboarding');
+
+// ─── Validation Schemas ────────────────────────────────────────────
+
+const createOrgSchema = z.object({
+  name: z.string().min(1, 'name is required').max(255),
+  slug: z.string().min(3).max(64).regex(
+    /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/,
+    'Slug must be 3-64 characters, lowercase alphanumeric with hyphens, cannot start/end with hyphen',
+  ),
+});
+
+const connectStripeSchema = z.object({
+  stripeSecretKey: z.string().min(1, 'stripeSecretKey is required'),
+  webhookSecret: z.string().optional(),
+});
+
+const connectAppleSchema = z.object({
+  keyId: z.string().min(1, 'keyId is required'),
+  issuerId: z.string().min(1, 'issuerId is required'),
+  bundleId: z.string().min(1, 'bundleId is required'),
+  privateKey: z.string().optional(),
+  originalNotificationUrl: z.string().url().optional(),
+});
 
 /**
  * Onboarding API — designed for FAST time-to-value.
@@ -66,6 +92,7 @@ export function createOnboardingRoutes(db: Database) {
         keyId: apiKeys.id,
         orgId: apiKeys.orgId,
         expiresAt: apiKeys.expiresAt,
+        scopes: apiKeys.scopes,
       })
       .from(apiKeys)
       .where(eq(apiKeys.keyHash, keyHash))
@@ -93,6 +120,7 @@ export function createOnboardingRoutes(db: Database) {
       orgId: found.orgId,
       orgSlug: org.slug,
       apiKeyId: found.keyId,
+      scopes: (found.scopes as string[]) || [],
     });
 
     await next();
@@ -102,18 +130,13 @@ export function createOnboardingRoutes(db: Database) {
 
   app.post('/org', async (c) => {
     const body = await c.req.json();
-    const { name, slug } = body;
 
-    if (!name || !slug) {
-      return c.json({ error: 'name and slug are required' }, 400);
+    const parsed = createOrgSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request body', details: parsed.error.flatten().fieldErrors }, 400);
     }
 
-    // Validate slug format
-    if (!/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(slug)) {
-      return c.json({
-        error: 'Slug must be 3-64 characters, lowercase alphanumeric with hyphens, cannot start/end with hyphen',
-      }, 400);
-    }
+    const { name, slug } = parsed.data;
 
     // Check slug availability
     const existing = await db
@@ -162,11 +185,13 @@ export function createOnboardingRoutes(db: Database) {
   app.post('/stripe', async (c) => {
     const { orgId } = c.get('auth') as AuthContext;
     const body = await c.req.json();
-    const { stripeSecretKey, webhookSecret } = body;
 
-    if (!stripeSecretKey) {
-      return c.json({ error: 'stripeSecretKey is required' }, 400);
+    const parsed = connectStripeSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request body', details: parsed.error.flatten().fieldErrors }, 400);
     }
+
+    const { stripeSecretKey, webhookSecret } = parsed.data;
 
     // Validate the key works
     try {
@@ -192,14 +217,14 @@ export function createOnboardingRoutes(db: Database) {
       .values({
         orgId,
         source: 'stripe',
-        credentials: { apiKey: stripeSecretKey }, // TODO: encrypt at rest
+        credentials: writeCredentials({ apiKey: stripeSecretKey }),
         webhookSecret: webhookSecret || null,
         isActive: true,
       })
       .onConflictDoUpdate({
         target: [billingConnections.orgId, billingConnections.source],
         set: {
-          credentials: { apiKey: stripeSecretKey },
+          credentials: writeCredentials({ apiKey: stripeSecretKey }),
           webhookSecret: webhookSecret || null,
           isActive: true,
           updatedAt: new Date(),
@@ -207,6 +232,7 @@ export function createOnboardingRoutes(db: Database) {
       });
 
     log.info({ orgId }, 'Stripe connection configured');
+    auditLog(db, c.get('auth'), 'billing_connection.created', 'billing_connection', undefined, { source: 'stripe' });
 
     return c.json({
       connected: true,
@@ -226,13 +252,13 @@ export function createOnboardingRoutes(db: Database) {
   app.post('/apple', async (c) => {
     const { orgId } = c.get('auth') as AuthContext;
     const body = await c.req.json();
-    const { keyId, issuerId, bundleId, privateKey, originalNotificationUrl } = body;
 
-    if (!keyId || !issuerId || !bundleId) {
-      return c.json({
-        error: 'keyId, issuerId, and bundleId are required',
-      }, 400);
+    const parsed = connectAppleSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request body', details: parsed.error.flatten().fieldErrors }, 400);
     }
+
+    const { keyId, issuerId, bundleId, privateKey, originalNotificationUrl } = parsed.data;
 
     const [org] = await db
       .select({ slug: organizations.slug })
@@ -257,19 +283,20 @@ export function createOnboardingRoutes(db: Database) {
       .values({
         orgId,
         source: 'apple',
-        credentials,
+        credentials: writeCredentials(credentials),
         isActive: true,
       })
       .onConflictDoUpdate({
         target: [billingConnections.orgId, billingConnections.source],
         set: {
-          credentials,
+          credentials: writeCredentials(credentials),
           isActive: true,
           updatedAt: new Date(),
         },
       });
 
     log.info({ orgId, hasProxy: !!originalNotificationUrl }, 'Apple connection configured');
+    auditLog(db, c.get('auth'), 'billing_connection.created', 'billing_connection', undefined, { source: 'apple' });
 
     const instructions = [
       '1. Go to App Store Connect -> App -> App Store Server Notifications',
@@ -334,7 +361,7 @@ export function createOnboardingRoutes(db: Database) {
 
     try {
       const Stripe = (await import('stripe')).default;
-      const creds = conn.credentials as { apiKey: string };
+      const creds = readCredentials<{ apiKey: string }>(conn.credentials);
       const stripe = new Stripe(creds.apiKey);
 
       // Test 1: List customers
@@ -385,13 +412,13 @@ export function createOnboardingRoutes(db: Database) {
       return c.json({ error: 'Apple not connected. Run POST /setup/apple first.' }, 400);
     }
 
-    const creds = conn.credentials as {
+    const creds = readCredentials<{
       keyId: string;
       issuerId: string;
       bundleId: string;
       privateKey?: string;
       originalNotificationUrl?: string;
-    };
+    }>(conn.credentials);
 
     const checks = {
       credentialsStored: true,
@@ -656,8 +683,8 @@ export function createOnboardingRoutes(db: Database) {
           details: 'All API communications are encrypted with TLS 1.3. HTTP connections are automatically upgraded to HTTPS.',
         },
         credentialStorage: {
-          method: 'Encrypted at application layer',
-          details: 'Billing provider API keys and credentials are encrypted before storage and decrypted only in-memory during API calls.',
+          method: 'AES-256-GCM application-layer encryption',
+          details: 'Billing provider API keys and credentials are encrypted with AES-256-GCM at the application layer before database storage. Each value uses a unique IV. Decryption occurs only in-memory during API calls.',
         },
       },
       accessControl: {
@@ -666,8 +693,8 @@ export function createOnboardingRoutes(db: Database) {
           details: 'API keys are hashed with SHA-256 before storage. Only the key prefix is stored in plaintext for identification.',
         },
         authorization: {
-          method: 'Organization-scoped',
-          details: 'All data access is scoped to the organization associated with the API key. Cross-organization data access is not possible.',
+          method: 'Organization-scoped with API key scopes',
+          details: 'All data access is scoped to the organization associated with the API key. API keys support granular scopes (e.g., read:issues, write:alerts) to limit access. Cross-organization data access is not possible.',
         },
         multiTenancy: {
           model: 'Shared infrastructure, isolated data',
@@ -677,7 +704,7 @@ export function createOnboardingRoutes(db: Database) {
       dataRetention: {
         rawEvents: {
           period: '2 years',
-          details: 'Raw billing events and webhook payloads are retained for 2 years for audit and replay purposes.',
+          details: 'Raw billing events are retained for 2 years for audit and replay purposes. Raw payload is cleared after the retention period.',
         },
         issues: {
           period: 'Indefinite',
@@ -685,7 +712,7 @@ export function createOnboardingRoutes(db: Database) {
         },
         webhookLogs: {
           period: '90 days',
-          details: 'Webhook delivery logs including headers and raw payloads are retained for 90 days.',
+          details: 'Webhook delivery logs are retained for 90 days. PII is stripped from stored headers and payloads where possible.',
         },
         userIdentities: {
           period: 'Until account deletion',
@@ -694,23 +721,23 @@ export function createOnboardingRoutes(db: Database) {
       },
       compliance: {
         soc2Type1: {
-          status: 'In Progress',
-          expectedCompletion: 'Q2 2026',
-          details: 'SOC 2 Type I audit is currently in progress. Report will be available upon request once completed.',
+          status: 'Planned',
+          expectedCompletion: 'Q3 2026',
+          details: 'SOC 2 Type I audit is planned. Report will be available upon request once completed.',
         },
         gdpr: {
-          status: 'Compliant',
-          details: 'Data processing complies with GDPR requirements. Data Processing Agreement (DPA) available upon request.',
+          status: 'Implemented',
+          details: 'GDPR data subject rights are supported. Right-to-delete and data export APIs are available at DELETE /api/v1/data-management/users/:userId/data and GET /api/v1/data-management/users/:userId/data-export. Data Processing Agreement (DPA) available upon request.',
           dataSubjectRights: [
-            'Right to access',
-            'Right to erasure',
-            'Right to portability',
+            'Right to access (GET /api/v1/data-management/users/:userId/data-export)',
+            'Right to erasure (DELETE /api/v1/data-management/users/:userId/data)',
+            'Right to portability (GET /api/v1/data-management/users/:userId/data-export)',
             'Right to rectification',
           ],
         },
         ccpa: {
-          status: 'Compliant',
-          details: 'Data handling complies with CCPA requirements. Privacy policy available at https://revback.io/privacy.',
+          status: 'In Progress',
+          details: 'Data handling is being aligned with CCPA requirements. Privacy policy available at https://revback.io/privacy.',
         },
       },
       networkSecurity: {
@@ -720,7 +747,7 @@ export function createOnboardingRoutes(db: Database) {
           '35.199.173.0/24',
         ],
         details: 'Webhook forwarding and API calls originate from these IP ranges. Add them to your firewall allowlist if needed.',
-        ddosProtection: 'Cloud provider managed DDoS protection with automatic rate limiting.',
+        ddosProtection: 'Cloud provider managed DDoS protection with application-level rate limiting on API endpoints.',
       },
       incidentResponse: {
         contactEmail: 'security@revback.io',
