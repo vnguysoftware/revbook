@@ -4,10 +4,11 @@ import { z } from 'zod';
 import type { Database } from '../config/database.js';
 import { alertConfigurations, alertDeliveryLogs } from '../models/schema.js';
 import type { AuthContext } from '../middleware/auth.js';
-import type { SlackAlertConfig, EmailAlertConfig, WebhookAlertConfig } from '../models/types.js';
+import type { SlackAlertConfig, EmailAlertConfig, WebhookAlertConfig, PagerDutyAlertConfig } from '../models/types.js';
 import { sendSlackTestAlert } from '../alerts/slack.js';
 import { sendEmailTestAlert } from '../alerts/email.js';
 import { sendWebhookTestAlert } from '../alerts/webhook.js';
+import { sendPagerDutyTestAlert } from '../alerts/pagerduty.js';
 import { generateSigningSecret } from '../alerts/webhook-signing.js';
 import { createChildLogger } from '../config/logger.js';
 import { requireScope } from '../middleware/require-scope.js';
@@ -31,16 +32,21 @@ const webhookConfigSchema = z.object({
   eventTypes: z.array(z.enum(['issue.created', 'issue.resolved', 'issue.dismissed', 'issue.acknowledged'])).optional(),
 });
 
+const pagerdutyConfigSchema = z.object({
+  routingKey: z.string().min(1, 'routingKey is required'),
+});
+
 const severityFilterSchema = z.array(
   z.enum(['critical', 'warning', 'info']),
 ).min(1);
 
 const createAlertSchema = z.object({
-  channel: z.enum(['slack', 'email', 'webhook']),
+  channel: z.enum(['slack', 'email', 'webhook', 'pagerduty']),
   config: z.union([
     slackConfigSchema,
     emailConfigSchema,
     webhookConfigSchema,
+    pagerdutyConfigSchema,
   ]),
   severityFilter: severityFilterSchema.default(['critical', 'warning', 'info']),
   issueTypes: z.array(z.string()).nullable().default(null),
@@ -48,7 +54,7 @@ const createAlertSchema = z.object({
 });
 
 const updateAlertSchema = z.object({
-  config: z.union([slackConfigSchema, emailConfigSchema, webhookConfigSchema]).optional(),
+  config: z.union([slackConfigSchema, emailConfigSchema, webhookConfigSchema, pagerdutyConfigSchema]).optional(),
   severityFilter: severityFilterSchema.optional(),
   issueTypes: z.array(z.string()).nullable().optional(),
   enabled: z.boolean().optional(),
@@ -86,6 +92,12 @@ function sanitizeConfig(channel: string, config: unknown): unknown {
       url: webhookConfig.url,
       signingSecret: '***',
       eventTypes: webhookConfig.eventTypes || null,
+    };
+  }
+  if (channel === 'pagerduty') {
+    const pdConfig = config as PagerDutyAlertConfig;
+    return {
+      routingKey: maskWebhookUrl(pdConfig.routingKey),
     };
   }
   // Email config is safe to return as-is
@@ -135,6 +147,14 @@ export function createAlertRoutes(db: Database) {
       if (!check.success) {
         return c.json({
           error: 'Invalid webhook configuration. Provide a valid url.',
+          details: check.error.flatten().fieldErrors,
+        }, 400);
+      }
+    } else if (data.channel === 'pagerduty') {
+      const check = pagerdutyConfigSchema.safeParse(data.config);
+      if (!check.success) {
+        return c.json({
+          error: 'Invalid PagerDuty configuration. Provide a valid routingKey.',
           details: check.error.flatten().fieldErrors,
         }, 400);
       }
@@ -255,6 +275,14 @@ export function createAlertRoutes(db: Database) {
         // Preserve the existing signing secret
         const existingConfig = existing.config as unknown as WebhookAlertConfig;
         parsed.data.config = { ...parsed.data.config, signingSecret: existingConfig.signingSecret } as any;
+      } else if (existing.channel === 'pagerduty') {
+        const check = pagerdutyConfigSchema.safeParse(parsed.data.config);
+        if (!check.success) {
+          return c.json({
+            error: 'Invalid PagerDuty configuration',
+            details: check.error.flatten().fieldErrors,
+          }, 400);
+        }
       }
     }
 
@@ -371,6 +399,11 @@ export function createAlertRoutes(db: Database) {
       case 'webhook': {
         const webhookConfig = config.config as unknown as WebhookAlertConfig;
         result = await sendWebhookTestAlert(webhookConfig);
+        break;
+      }
+      case 'pagerduty': {
+        const pagerdutyConfig = config.config as unknown as PagerDutyAlertConfig;
+        result = await sendPagerDutyTestAlert(pagerdutyConfig.routingKey);
         break;
       }
       default:

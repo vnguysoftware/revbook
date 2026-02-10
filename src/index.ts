@@ -14,6 +14,7 @@ import { createOnboardingRoutes } from './api/onboarding.js';
 import { createAlertRoutes } from './api/alerts.js';
 import { createAccessCheckRoutes } from './api/access-checks.js';
 import { createDataManagementRoutes } from './api/data-management.js';
+import { createAuditLogRoutes } from './api/audit-logs.js';
 import { createFirstLookRoutes } from './api/first-look.js';
 import { createWebhookLogRoutes } from './api/webhook-logs.js';
 import { createDlqRoutes } from './queue/dlq.js';
@@ -130,6 +131,7 @@ api.route('/alerts', createAlertRoutes(db));
 api.route('/access-checks', createAccessCheckRoutes(db));
 api.route('/data-management', createDataManagementRoutes(db));
 api.route('/webhook-logs', createWebhookLogRoutes(db));
+api.route('/audit-logs', createAuditLogRoutes(db));
 
 // Admin routes (also authenticated)
 api.route('/admin/dlq', createDlqRoutes());
@@ -247,6 +249,8 @@ const server = serve({ fetch: app.fetch, port }, () => {
   log.info('  GET    /api/v1/webhook-logs       → Webhook delivery logs');
   log.info('  GET    /api/v1/webhook-logs/stats  → Webhook stats');
   log.info('  GET    /api/v1/webhook-logs/:id    → Webhook log detail');
+  log.info('  GET    /api/v1/audit-logs          → List audit logs');
+  log.info('  GET    /api/v1/audit-logs/export   → Export audit logs');
   log.info('  GET    /api/v1/admin/queues      → Queue health');
   log.info('  GET    /api/v1/admin/dlq         → Dead letter queue');
   log.info('  POST   /api/v1/admin/dlq/:id/retry → Retry DLQ job');

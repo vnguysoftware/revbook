@@ -17,6 +17,7 @@ export const SCOPES = [
   'access-checks:write',
   'dashboard:read',
   'users:read',
+  'audit:read',
   '*',
 ] as const;
 

@@ -1,9 +1,10 @@
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '../config/database.js';
 import { alertConfigurations, alertDeliveryLogs } from '../models/schema.js';
-import type { Issue, SlackAlertConfig, EmailAlertConfig, WebhookAlertConfig } from '../models/types.js';
+import type { Issue, SlackAlertConfig, EmailAlertConfig, WebhookAlertConfig, PagerDutyAlertConfig } from '../models/types.js';
 import { sendSlackAlert } from './slack.js';
 import { sendEmailAlert } from './email.js';
+import { sendPagerDutyAlert } from './pagerduty.js';
 import { enqueueWebhookDelivery } from '../queue/webhook-delivery-worker.js';
 import { createChildLogger } from '../config/logger.js';
 
@@ -85,6 +86,11 @@ export async function dispatchAlert(
             eventType: 'issue.created',
           });
           result = { success: true };
+          break;
+        }
+        case 'pagerduty': {
+          const pagerdutyConfig = config.config as unknown as PagerDutyAlertConfig;
+          result = await sendPagerDutyAlert(pagerdutyConfig.routingKey, issue);
           break;
         }
         default:

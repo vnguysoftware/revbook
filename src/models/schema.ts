@@ -272,7 +272,7 @@ export const issues = pgTable('issues', {
 
 // ─── Alert Configurations ────────────────────────────────────────────
 
-export const alertChannelEnum = pgEnum('alert_channel', ['slack', 'email', 'webhook']);
+export const alertChannelEnum = pgEnum('alert_channel', ['slack', 'email', 'webhook', 'pagerduty']);
 
 export const alertConfigurations = pgTable('alert_configurations', {
   id: uuid('id').primaryKey().defaultRandom(),

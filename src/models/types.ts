@@ -135,7 +135,7 @@ export interface DetectedIssue {
 
 // ─── Alert types ────────────────────────────────────────────────────
 
-export type AlertChannel = 'slack' | 'email' | 'webhook';
+export type AlertChannel = 'slack' | 'email' | 'webhook' | 'pagerduty';
 
 export interface SlackAlertConfig {
   webhookUrl: string;
@@ -164,4 +164,8 @@ export interface WebhookPayload {
   };
 }
 
-export type AlertConfig = SlackAlertConfig | EmailAlertConfig | WebhookAlertConfig;
+export interface PagerDutyAlertConfig {
+  routingKey: string;
+}
+
+export type AlertConfig = SlackAlertConfig | EmailAlertConfig | WebhookAlertConfig | PagerDutyAlertConfig;
