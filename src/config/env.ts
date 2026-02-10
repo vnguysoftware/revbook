@@ -16,6 +16,14 @@ const envSchema = z.object({
   APPLE_PRIVATE_KEY_PATH: z.string().optional(),
   APPLE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
 
+  RECURLY_API_KEY: z.string().optional(),
+  RECURLY_WEBHOOK_KEY: z.string().optional(),
+  RECURLY_SUBDOMAIN: z.string().optional(),
+
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
+  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: z.string().optional(),
+  GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
+
   JWT_SECRET: z.string().min(16),
   API_KEY_SALT: z.string().min(16),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),

@@ -192,6 +192,21 @@ function getStripeUrl(value: string): string | null {
   return null;
 }
 
+function getProviderUrl(value: string): string | null {
+  // Stripe IDs
+  const stripeUrl = getStripeUrl(value);
+  if (stripeUrl) return stripeUrl;
+
+  // Recurly UUIDs (format: hex-hex-hex-hex-hex)
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    // Recurly UUIDs are generic, so we can't auto-link without context.
+    // But the key names in evidence will tell us the object type.
+    return null;
+  }
+
+  return null;
+}
+
 export function IssueDetailPage() {
   const { issueId } = useParams<{ issueId: string }>();
   const [confirmAction, setConfirmAction] = useState<string | null>(null);

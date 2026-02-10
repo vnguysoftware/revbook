@@ -18,7 +18,7 @@ import {
 
 type OnboardingPhase = 'auth' | 'connect' | 'import' | 'report';
 
-type ProviderChoice = 'stripe' | 'apple' | 'both';
+type ProviderChoice = 'stripe' | 'apple' | 'recurly' | 'both';
 
 interface VerifyCheck {
   label: string;
@@ -84,6 +84,7 @@ export function OnboardingPage() {
   const [currentPhase, setCurrentPhase] = useState<OnboardingPhase>('auth');
   const [apiKeyValue, setApiKeyValue] = useState(getApiKey());
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [connectedProvider, setConnectedProvider] = useState<ProviderChoice>('stripe');
 
   // Section refs for scroll-into-view
   const sectionRefs = {
@@ -196,7 +197,10 @@ export function OnboardingPage() {
             <SectionConnect
               isComplete={isPhaseComplete('connect')}
               apiKey={apiKeyValue}
-              onConnected={() => advanceTo('import')}
+              onConnected={(provider) => {
+                setConnectedProvider(provider);
+                advanceTo('import');
+              }}
             />
           </div>
         )}
@@ -209,6 +213,7 @@ export function OnboardingPage() {
               apiKey={apiKeyValue}
               onComplete={() => advanceTo('report')}
               onSkip={() => advanceTo('report')}
+              provider={connectedProvider}
             />
           </div>
         )}
@@ -493,7 +498,7 @@ function SectionConnect({
 }: {
   isComplete: boolean;
   apiKey: string;
-  onConnected: () => void;
+  onConnected: (provider: ProviderChoice) => void;
 }) {
   const [provider, setProvider] = useState<ProviderChoice>('stripe');
   const [stripeKey, setStripeKey] = useState('');
@@ -507,6 +512,13 @@ function SectionConnect({
   const [appleIssuerId, setAppleIssuerId] = useState('');
   const [appleBundleId, setAppleBundleId] = useState('');
   const [appleConnected, setAppleConnected] = useState(false);
+
+  // Recurly fields
+  const [recurlyApiKey, setRecurlyApiKey] = useState('');
+  const [recurlySubdomain, setRecurlySubdomain] = useState('');
+  const [recurlyWebhookKey, setRecurlyWebhookKey] = useState('');
+  const [recurlyVerifyChecks, setRecurlyVerifyChecks] = useState<VerifyCheck[] | null>(null);
+  const [recurlyVerifyDone, setRecurlyVerifyDone] = useState(false);
 
   if (isComplete) {
     return (
@@ -643,13 +655,105 @@ function SectionConnect({
     }
   }
 
+  async function handleRecurlyConnect() {
+    if (!recurlyApiKey || !recurlySubdomain) {
+      setError('API Key and Subdomain are required');
+      return;
+    }
+    setConnecting(true);
+    setError('');
+
+    const checks: VerifyCheck[] = [
+      { label: 'API key validated', status: 'checking' },
+      { label: 'Can access account data', status: 'pending' },
+      { label: 'Counting accounts...', status: 'pending' },
+      { label: 'Counting subscriptions...', status: 'pending' },
+      { label: 'Configuring webhook endpoint...', status: 'pending' },
+    ];
+    setRecurlyVerifyChecks([...checks]);
+
+    try {
+      const res = await fetch('/setup/recurly', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          apiKey: recurlyApiKey,
+          subdomain: recurlySubdomain,
+          webhookKey: recurlyWebhookKey || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to connect');
+
+      checks[0] = { label: 'API key validated', status: 'done' };
+      checks[1] = { ...checks[1], status: 'checking' };
+      setRecurlyVerifyChecks([...checks]);
+
+      await delay(400);
+      const verifyRes = await fetch('/setup/verify/recurly', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      const verifyData = await verifyRes.json();
+
+      const c = verifyData.checks || {};
+
+      checks[1] = {
+        label: 'Can access account data',
+        status: c.canListAccounts ? 'done' : 'error',
+        detail: c.canListAccounts ? undefined : 'Cannot list accounts',
+      };
+      checks[2] = { ...checks[2], status: 'checking' };
+      setRecurlyVerifyChecks([...checks]);
+      await delay(500);
+
+      checks[2] = {
+        label: `Found ${(c.accountCount ?? 0).toLocaleString()} accounts`,
+        status: 'done',
+      };
+      checks[3] = { ...checks[3], status: 'checking' };
+      setRecurlyVerifyChecks([...checks]);
+      await delay(500);
+
+      checks[3] = {
+        label: `Found ${(c.subscriptionCount ?? 0).toLocaleString()} active subscriptions`,
+        status: 'done',
+      };
+      checks[4] = { ...checks[4], status: 'checking' };
+      setRecurlyVerifyChecks([...checks]);
+      await delay(600);
+
+      checks[4] = {
+        label: 'Webhook endpoint configured',
+        status: 'done',
+        detail: c.webhookSecretConfigured ? undefined : 'Add a webhook secret later for signature verification',
+      };
+      setRecurlyVerifyChecks([...checks]);
+      setRecurlyVerifyDone(true);
+    } catch (err: any) {
+      setError(err.message);
+      const updated = (checks || []).map((ch) =>
+        ch.status === 'checking' ? { ...ch, status: 'error' as const, detail: err.message } : ch
+      );
+      setRecurlyVerifyChecks(updated);
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   const showStripe = provider === 'stripe' || provider === 'both';
   const showApple = provider === 'apple' || provider === 'both';
+  const showRecurly = provider === 'recurly';
   const stripeReady = verifyDone;
   const appleReady = appleConnected;
+  const recurlyReady = recurlyVerifyDone;
   const canProceed =
     (provider === 'stripe' && stripeReady) ||
     (provider === 'apple' && appleReady) ||
+    (provider === 'recurly' && recurlyReady) ||
     (provider === 'both' && stripeReady && appleReady);
 
   return (
@@ -660,7 +764,7 @@ function SectionConnect({
 
       {/* Provider selector */}
       <div className="flex gap-2 mb-5">
-        {(['stripe', 'apple', 'both'] as ProviderChoice[]).map((p) => (
+        {(['stripe', 'apple', 'recurly', 'both'] as ProviderChoice[]).map((p) => (
           <button
             key={p}
             onClick={() => { setProvider(p); setError(''); }}
@@ -671,7 +775,7 @@ function SectionConnect({
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            {p === 'both' ? 'Both' : p === 'stripe' ? 'Stripe' : 'Apple'}
+            {p === 'both' ? 'Both' : p === 'stripe' ? 'Stripe' : p === 'apple' ? 'Apple' : 'Recurly'}
           </button>
         ))}
       </div>
@@ -820,6 +924,125 @@ function SectionConnect({
         </div>
       )}
 
+      {/* Recurly connection */}
+      {showRecurly && !recurlyVerifyChecks && (
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Recurly API key
+            </label>
+            <input
+              type="password"
+              value={recurlyApiKey}
+              onChange={(e) => setRecurlyApiKey(e.target.value)}
+              placeholder="your-recurly-api-key"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Find it at{' '}
+              <a
+                href="https://app.recurly.com/go/integrations/api_keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand-500 hover:underline"
+              >
+                Recurly Admin &gt; Integrations &gt; API Keys
+              </a>
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Subdomain
+            </label>
+            <input
+              type="text"
+              value={recurlySubdomain}
+              onChange={(e) => setRecurlySubdomain(e.target.value)}
+              placeholder="mycompany"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              e.g. "mycompany" for mycompany.recurly.com
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Webhook key <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="password"
+              value={recurlyWebhookKey}
+              onChange={(e) => setRecurlyWebhookKey(e.target.value)}
+              placeholder="webhook-signing-key"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+            />
+          </div>
+          <button
+            onClick={handleRecurlyConnect}
+            disabled={connecting || !recurlyApiKey || !recurlySubdomain}
+            className="w-full px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            {connecting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              'Connect'
+            )}
+          </button>
+          <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <p className="text-xs font-medium text-gray-700 mb-1">Webhook setup</p>
+            <p className="text-xs text-gray-500">
+              Go to Recurly Admin &rarr; Integrations &rarr; Webhooks &rarr; Add endpoint &rarr;
+              Set to JSON format &rarr; Paste your webhook URL:
+            </p>
+            <code className="block mt-1 text-xs font-mono text-brand-600 break-all">
+              YOUR_DOMAIN/webhooks/&#123;slug&#125;/recurly
+            </code>
+          </div>
+        </div>
+      )}
+
+      {/* Recurly verification checklist */}
+      {showRecurly && recurlyVerifyChecks && (
+        <div className="mb-4">
+          <div className="space-y-2.5">
+            {recurlyVerifyChecks.map((check, i) => (
+              <div key={i} className="flex items-center gap-2.5">
+                {check.status === 'done' && (
+                  <CheckCircle size={16} className="text-green-500 flex-shrink-0" />
+                )}
+                {check.status === 'checking' && (
+                  <Loader2 size={16} className="text-gray-400 animate-spin flex-shrink-0" />
+                )}
+                {check.status === 'pending' && (
+                  <div className="w-4 h-4 rounded-full border-2 border-gray-200 flex-shrink-0" />
+                )}
+                {check.status === 'error' && (
+                  <XCircle size={16} className="text-red-500 flex-shrink-0" />
+                )}
+                <div>
+                  <span className={`text-sm ${
+                    check.status === 'done' ? 'text-gray-900' :
+                    check.status === 'error' ? 'text-red-700' :
+                    check.status === 'checking' ? 'text-gray-700' :
+                    'text-gray-400'
+                  }`}>
+                    {check.label}
+                  </span>
+                  {check.detail && (
+                    <p className="text-xs text-gray-400 mt-0.5">{check.detail}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {recurlyVerifyDone && (
+            <div className="mt-4 pt-3 border-t border-gray-100">
+              <p className="text-sm font-medium text-green-700">Ready to import.</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
           <p className="text-sm text-red-700">{error}</p>
@@ -828,7 +1051,7 @@ function SectionConnect({
 
       {canProceed && (
         <button
-          onClick={onConnected}
+          onClick={() => onConnected(provider)}
           className="w-full px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
         >
           Continue <ArrowRight size={14} />
@@ -845,11 +1068,13 @@ function SectionImport({
   apiKey,
   onComplete,
   onSkip,
+  provider = 'stripe',
 }: {
   isComplete: boolean;
   apiKey: string;
   onComplete: () => void;
   onSkip: () => void;
+  provider?: ProviderChoice;
 }) {
   const [progress, setProgress] = useState<BackfillProgress | null>(null);
   const [starting, setStarting] = useState(false);
@@ -901,8 +1126,9 @@ function SectionImport({
   async function startImport() {
     setStarting(true);
     setError('');
+    const backfillProvider = provider === 'both' ? 'stripe' : provider;
     try {
-      const res = await fetch('/setup/backfill/stripe', {
+      const res = await fetch(`/setup/backfill/${backfillProvider}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}` },
       });

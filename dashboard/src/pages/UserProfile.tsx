@@ -78,6 +78,7 @@ export function UserProfilePage() {
     stripe: <Zap size={14} className="text-purple-600" />,
     apple: <Shield size={14} className="text-gray-700" />,
     google: <Activity size={14} className="text-green-600" />,
+    recurly: <CreditCard size={14} className="text-blue-600" />,
   };
 
   return (

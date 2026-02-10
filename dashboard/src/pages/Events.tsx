@@ -36,12 +36,14 @@ const sourceIcons: Record<string, React.ReactNode> = {
   stripe: <Zap size={14} className="text-purple-600" />,
   apple: <Shield size={14} className="text-gray-700" />,
   google: <Activity size={14} className="text-green-600" />,
+  recurly: <RefreshCw size={14} className="text-blue-600" />,
 };
 
 const sourceLabels: Record<string, string> = {
   stripe: 'Stripe',
   apple: 'Apple',
   google: 'Google Play',
+  recurly: 'Recurly',
 };
 
 const DATE_PRESETS = [
@@ -99,6 +101,7 @@ export function EventsPage() {
           { value: 'stripe', label: 'Stripe', icon: <Zap size={13} className="text-purple-600" /> },
           { value: 'apple', label: 'Apple', icon: <Shield size={13} className="text-gray-700" /> },
           { value: 'google', label: 'Google', icon: <Activity size={13} className="text-green-600" /> },
+          { value: 'recurly', label: 'Recurly', icon: <RefreshCw size={13} className="text-blue-600" /> },
         ].map((s) => (
           <button
             key={s.value}

@@ -167,6 +167,7 @@ export function createWebhookRoutes(db: Database) {
   app.post('/:orgSlug/stripe', (c) => handleWebhook(c, 'stripe'));
   app.post('/:orgSlug/apple', (c) => handleWebhook(c, 'apple'));
   app.post('/:orgSlug/google', (c) => handleWebhook(c, 'google'));
+  app.post('/:orgSlug/recurly', (c) => handleWebhook(c, 'recurly'));
 
   return app;
 }

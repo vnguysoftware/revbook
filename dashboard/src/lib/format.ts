@@ -58,6 +58,7 @@ export function sourceIcon(source: string): string {
     case 'stripe': return '💳';
     case 'apple': return '🍎';
     case 'google': return '🤖';
+    case 'recurly': return '🔄';
     default: return '📦';
   }
 }

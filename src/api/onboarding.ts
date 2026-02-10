@@ -16,6 +16,7 @@ import {
 import type { AuthContext } from '../middleware/auth.js';
 import { hashApiKey } from '../middleware/auth.js';
 import { StripeBackfill } from '../ingestion/backfill/stripe-backfill.js';
+import { RecurlyBackfill } from '../ingestion/backfill/recurly-backfill.js';
 import { createChildLogger } from '../config/logger.js';
 import { writeCredentials, readCredentials } from '../security/credentials.js';
 import { auditLog } from '../security/audit.js';
@@ -37,6 +38,12 @@ const connectStripeSchema = z.object({
   webhookSecret: z.string().optional(),
 });
 
+const connectRecurlySchema = z.object({
+  apiKey: z.string().min(1, 'apiKey is required'),
+  subdomain: z.string().min(1, 'subdomain is required'),
+  webhookKey: z.string().optional(),
+});
+
 const connectAppleSchema = z.object({
   keyId: z.string().min(1, 'keyId is required'),
   issuerId: z.string().min(1, 'issuerId is required'),
@@ -52,15 +59,18 @@ const connectAppleSchema = z.object({
  * to happen and to immediately show value."
  *
  * Onboarding flow:
- * 1. POST /setup/org             → Create organization, get API key
- * 2. POST /setup/stripe          → Connect Stripe (just paste API key + webhook secret)
- * 3. POST /setup/apple           → Connect Apple (paste credentials)
- * 4. POST /setup/verify/stripe   → Verify Stripe connectivity
- * 5. POST /setup/verify/apple    → Verify Apple credentials
- * 6. GET  /setup/status          → Check integration health (enhanced)
- * 7. POST /setup/backfill/stripe → Import historical data from Stripe
- * 8. GET  /setup/backfill/progress → Real-time import progress
- * 9. GET  /setup/security-info   → Security documentation for enterprise
+ * 1.  POST /setup/org              → Create organization, get API key
+ * 2a. POST /setup/stripe           → Connect Stripe (just paste API key + webhook secret)
+ * 2b. POST /setup/apple            → Connect Apple (paste credentials)
+ * 2c. POST /setup/recurly          → Connect Recurly (API key + subdomain)
+ * 3a. POST /setup/verify/stripe    → Verify Stripe connectivity
+ * 3b. POST /setup/verify/apple     → Verify Apple credentials
+ * 3c. POST /setup/verify/recurly   → Verify Recurly connectivity
+ * 4.  GET  /setup/status           → Check integration health (enhanced)
+ * 5a. POST /setup/backfill/stripe  → Import historical data from Stripe
+ * 5b. POST /setup/backfill/recurly → Import historical data from Recurly
+ * 6.  GET  /setup/backfill/progress → Real-time import progress
+ * 7.  GET  /setup/security-info    → Security documentation for enterprise
  *
  * Goal: working integration in < 10 minutes.
  */
@@ -321,6 +331,85 @@ export function createOnboardingRoutes(db: Database) {
     });
   });
 
+  // ─── Step 2c: Connect Recurly ──────────────────────────────────────
+
+  app.post('/recurly', async (c) => {
+    const { orgId } = c.get('auth') as AuthContext;
+    const body = await c.req.json();
+
+    const parsed = connectRecurlySchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request body', details: parsed.error.flatten().fieldErrors }, 400);
+    }
+
+    const { apiKey, subdomain, webhookKey } = parsed.data;
+
+    // Validate the API key works by calling Recurly API
+    try {
+      const auth = Buffer.from(`${apiKey}:`).toString('base64');
+      const response = await fetch('https://v3.recurly.com/accounts?limit=1', {
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Accept': 'application/vnd.recurly.v2021-02-25+json',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        return c.json({
+          error: 'Invalid Recurly API key',
+          detail: `Recurly API returned ${response.status}: ${errBody}`,
+        }, 400);
+      }
+    } catch (err: any) {
+      return c.json({
+        error: 'Failed to connect to Recurly',
+        detail: err.message,
+      }, 400);
+    }
+
+    const [org] = await db
+      .select({ slug: organizations.slug })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    await db
+      .insert(billingConnections)
+      .values({
+        orgId,
+        source: 'recurly',
+        credentials: writeCredentials({ apiKey, subdomain }),
+        webhookSecret: webhookKey || null,
+        isActive: true,
+      })
+      .onConflictDoUpdate({
+        target: [billingConnections.orgId, billingConnections.source],
+        set: {
+          credentials: writeCredentials({ apiKey, subdomain }),
+          webhookSecret: webhookKey || null,
+          isActive: true,
+          updatedAt: new Date(),
+        },
+      });
+
+    log.info({ orgId }, 'Recurly connection configured');
+    auditLog(db, c.get('auth'), 'billing_connection.created', 'billing_connection', undefined, { source: 'recurly' });
+
+    return c.json({
+      connected: true,
+      source: 'recurly',
+      webhookUrl: `/webhooks/${org?.slug}/recurly`,
+      instructions: [
+        '1. Go to Recurly Dashboard -> Developers -> Webhooks',
+        `2. Add endpoint URL: YOUR_DOMAIN/webhooks/${org?.slug}/recurly`,
+        '3. Select notification types: all subscription and account notifications',
+        '4. Copy the webhook signing key and include it as webhookKey when connecting',
+      ],
+    });
+  });
+
   // ─── Step 3: Verify Stripe Connectivity ─────────────────────────────
 
   app.post('/verify/stripe', async (c) => {
@@ -475,6 +564,84 @@ export function createOnboardingRoutes(db: Database) {
     });
   });
 
+  // ─── Step 3c: Verify Recurly Connectivity ──────────────────────────
+
+  app.post('/verify/recurly', async (c) => {
+    const { orgId } = c.get('auth') as AuthContext;
+
+    const [conn] = await db
+      .select()
+      .from(billingConnections)
+      .where(
+        and(
+          eq(billingConnections.orgId, orgId),
+          eq(billingConnections.source, 'recurly'),
+        ),
+      )
+      .limit(1);
+
+    if (!conn) {
+      return c.json({ error: 'Recurly not connected. Run POST /setup/recurly first.' }, 400);
+    }
+
+    const checks: {
+      apiKeyValid: boolean;
+      webhookKeyConfigured: boolean;
+      canListAccounts: boolean;
+      canListSubscriptions: boolean;
+      accountCount: number | null;
+      subscriptionCount: number | null;
+      error: string | null;
+    } = {
+      apiKeyValid: false,
+      webhookKeyConfigured: !!conn.webhookSecret,
+      canListAccounts: false,
+      canListSubscriptions: false,
+      accountCount: null,
+      subscriptionCount: null,
+      error: null,
+    };
+
+    try {
+      const creds = readCredentials<{ apiKey: string; subdomain: string }>(conn.credentials);
+      const auth = Buffer.from(`${creds.apiKey}:`).toString('base64');
+      const headers = {
+        'Authorization': `Basic ${auth}`,
+        'Accept': 'application/vnd.recurly.v2021-02-25+json',
+        'Content-Type': 'application/json',
+      };
+
+      // Test 1: List accounts
+      const accountsResponse = await fetch('https://v3.recurly.com/accounts?limit=1', { headers });
+      if (!accountsResponse.ok) {
+        throw new Error(`Recurly API returned ${accountsResponse.status}`);
+      }
+      const accountsData = await accountsResponse.json() as { data: unknown[]; has_more: boolean };
+      checks.apiKeyValid = true;
+      checks.canListAccounts = true;
+      checks.accountCount = accountsData.data.length > 0 ? (accountsData.has_more ? -1 : accountsData.data.length) : 0;
+
+      // Test 2: List subscriptions
+      const subsResponse = await fetch('https://v3.recurly.com/subscriptions?limit=1', { headers });
+      if (subsResponse.ok) {
+        const subsData = await subsResponse.json() as { data: unknown[]; has_more: boolean };
+        checks.canListSubscriptions = true;
+        checks.subscriptionCount = subsData.data.length > 0 ? (subsData.has_more ? -1 : subsData.data.length) : 0;
+      }
+    } catch (err: any) {
+      checks.error = err.message;
+    }
+
+    return c.json({
+      source: 'recurly',
+      verified: checks.apiKeyValid && checks.canListSubscriptions,
+      checks,
+      message: checks.apiKeyValid
+        ? 'Recurly API key is valid and working'
+        : `Recurly verification failed: ${checks.error}`,
+    });
+  });
+
   // ─── Step 4: Check Integration Health (Enhanced) ────────────────────
 
   app.get('/status', async (c) => {
@@ -530,9 +697,15 @@ export function createOnboardingRoutes(db: Database) {
       );
 
     // Fetch backfill progress if available
-    let backfillProgress = null;
+    let backfillProgress: { stripe: any; recurly: any } | null = null;
     try {
-      backfillProgress = await StripeBackfill.getProgress(orgId);
+      const [stripeProgress, recurlyProgress] = await Promise.all([
+        StripeBackfill.getProgress(orgId).catch(() => null),
+        RecurlyBackfill.getProgress(orgId).catch(() => null),
+      ]);
+      if (stripeProgress || recurlyProgress) {
+        backfillProgress = { stripe: stripeProgress, recurly: recurlyProgress };
+      }
     } catch {
       // Redis not available, skip
     }
@@ -649,21 +822,82 @@ export function createOnboardingRoutes(db: Database) {
     });
   });
 
+  // ─── Step 5b: Historical Backfill from Recurly ─────────────────────
+
+  app.post('/backfill/recurly', async (c) => {
+    const { orgId } = c.get('auth') as AuthContext;
+
+    const [conn] = await db
+      .select()
+      .from(billingConnections)
+      .where(
+        and(
+          eq(billingConnections.orgId, orgId),
+          eq(billingConnections.source, 'recurly'),
+        ),
+      )
+      .limit(1);
+
+    if (!conn) {
+      return c.json({ error: 'Recurly not connected. Run POST /setup/recurly first.' }, 400);
+    }
+
+    // Check if backfill is already running
+    let existingProgress = null;
+    try {
+      existingProgress = await RecurlyBackfill.getProgress(orgId);
+    } catch {
+      // Redis not available
+    }
+
+    if (existingProgress && (existingProgress.status === 'importing_subscriptions' || existingProgress.status === 'importing_events' || existingProgress.status === 'counting')) {
+      return c.json({
+        error: 'Backfill already in progress',
+        progress: existingProgress,
+      }, 409);
+    }
+
+    // Start backfill in the background
+    const jobId = `backfill_recurly_${orgId}_${Date.now()}`;
+    const backfill = new RecurlyBackfill(db);
+
+    // Fire and forget - don't await
+    backfill.run(orgId).catch((err) => {
+      log.error({ err, orgId, jobId }, 'Background Recurly backfill failed');
+    });
+
+    log.info({ orgId, jobId }, 'Recurly backfill started');
+
+    return c.json({
+      jobId,
+      status: 'started',
+      message: 'Historical data import from Recurly has started. Check /setup/backfill/progress for real-time updates.',
+      progressUrl: '/setup/backfill/progress',
+      estimatedTime: '5-15 minutes depending on data volume',
+    });
+  });
+
   // ─── Backfill Progress ──────────────────────────────────────────────
 
   app.get('/backfill/progress', async (c) => {
     const { orgId } = c.get('auth') as AuthContext;
 
-    const progress = await StripeBackfill.getProgress(orgId);
+    const [stripeProgress, recurlyProgress] = await Promise.all([
+      StripeBackfill.getProgress(orgId).catch(() => null),
+      RecurlyBackfill.getProgress(orgId).catch(() => null),
+    ]);
 
-    if (!progress) {
+    if (!stripeProgress && !recurlyProgress) {
       return c.json({
         status: 'not_started',
-        message: 'No backfill has been started. Run POST /setup/backfill/stripe to begin.',
+        message: 'No backfill has been started. Run POST /setup/backfill/stripe or /setup/backfill/recurly to begin.',
       });
     }
 
-    return c.json(progress);
+    return c.json({
+      stripe: stripeProgress || null,
+      recurly: recurlyProgress || null,
+    });
   });
 
   // ─── Security Info ──────────────────────────────────────────────────

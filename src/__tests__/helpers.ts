@@ -510,6 +510,112 @@ export async function createAppleNotificationPayload(
   };
 }
 
+// ─── Recurly Webhook Fixtures ────────────────────────────────────
+
+export function createRecurlySubscriptionPayload(
+  notificationType: string,
+  overrides?: Partial<any>,
+) {
+  return {
+    id: `notif_recurly_${notificationType}_001`,
+    object_type: 'subscription',
+    event_type: notificationType,
+    account: {
+      code: 'acct_123',
+      email: 'user@test.com',
+    },
+    subscription: {
+      uuid: 'sub_recurly_abc123',
+      plan: {
+        code: 'premium',
+        name: 'Premium Plan',
+        interval_length: 1,
+        interval_unit: 'months',
+      },
+      state: 'active',
+      unit_amount_in_cents: 1999,
+      currency: 'USD',
+      current_period_started_at: '2025-01-15T00:00:00Z',
+      current_period_ends_at: '2025-02-15T00:00:00Z',
+      ...overrides?.subscription,
+    },
+    invoice: {
+      uuid: 'inv_recurly_001',
+      total_in_cents: 1999,
+      currency: 'USD',
+      ...overrides?.invoice,
+    },
+    ...overrides,
+  };
+}
+
+export function createRecurlyPaymentPayload(
+  status: 'success' | 'failed' = 'success',
+  overrides?: Partial<any>,
+) {
+  return {
+    id: `notif_recurly_payment_${status}_001`,
+    object_type: 'payment',
+    event_type: status === 'success' ? 'successful' : 'failed',
+    account: {
+      code: 'acct_123',
+      email: 'user@test.com',
+    },
+    subscription: {
+      uuid: 'sub_recurly_abc123',
+      plan: {
+        code: 'premium',
+        name: 'Premium Plan',
+        interval_length: 1,
+        interval_unit: 'months',
+      },
+      state: 'active',
+      unit_amount_in_cents: 1999,
+      currency: 'USD',
+      ...overrides?.subscription,
+    },
+    transaction: {
+      uuid: 'txn_recurly_001',
+      amount_in_cents: 1999,
+      status,
+      currency: 'USD',
+      ...overrides?.transaction,
+    },
+    ...overrides,
+  };
+}
+
+export function createRecurlyRefundPayload(overrides?: Partial<any>) {
+  return {
+    id: 'notif_recurly_refund_001',
+    object_type: 'refund',
+    event_type: 'successful',
+    account: {
+      code: 'acct_123',
+      email: 'user@test.com',
+    },
+    subscription: {
+      uuid: 'sub_recurly_abc123',
+      plan: {
+        code: 'premium',
+        name: 'Premium Plan',
+      },
+      state: 'active',
+      unit_amount_in_cents: 1999,
+      currency: 'USD',
+      ...overrides?.subscription,
+    },
+    transaction: {
+      uuid: 'txn_recurly_refund_001',
+      amount_in_cents: 1999,
+      status: 'success',
+      currency: 'USD',
+      ...overrides?.transaction,
+    },
+    ...overrides,
+  };
+}
+
 export function createRawWebhookEvent(
   source: BillingSource,
   body: string,
